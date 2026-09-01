@@ -120,7 +120,7 @@ def is_user_active(user_id: int) -> bool:
 user_active_scans: dict = {}
 
 # ==================== دالة تسجيل الدخول (LightKVD) ====================
-def _do_login(phone: str, pw: str, region: int = 966, timeout: int = 20) -> dict:
+def _do_login(phone: str, pw: str, region: int = 964, timeout: int = 20) -> dict:
     session = get_session()
     dname, model = rdev()
     _uid     = str(uuid.uuid4())
@@ -191,8 +191,8 @@ def _do_login(phone: str, pw: str, region: int = 966, timeout: int = 20) -> dict
         return {"status": "ERROR", "message": str(e), "dev": {"name": dname, "model": model}}
 
 def generate_random_phone():
-    prefixes = ["50", "53", "55", "56", "54", "58", "59"]
-    return random.choice(prefixes) + "".join([str(random.randint(0, 9)) for _ in range(7)])
+    prefixes = ["771", "770", "781", "777"]
+    return random.choice(prefixes) + "".join([str(random.randint(0, 7)) for _ in range(7)])
 
 # ==================== واجهات الأزرار (Keyboards) ====================
 def get_main_keyboard(user_id: int) -> InlineKeyboardMarkup:
@@ -357,7 +357,7 @@ def handle_callbacks(call):
 
 # ==================== خيوط الفحص المعزولة للمستخدم ====================
 def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
-    region = 966
+    region = 964
     max_threads = 8  # عدد الخيوط لكل مستخدم لضمان السرعة
 
     def worker():
