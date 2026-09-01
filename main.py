@@ -420,9 +420,9 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
 
             status_text = (
                 "<b>جاري فحص الحسابات</b>\n\n"
-                "تم صيد : 0\n"
-                "غير مسجل : 0\n"
-                "الاخطاء : 0",
+                "تم صيد : {v}\n"
+                "غير مسجل : {nr}\n"
+                "الاخطاء : {e}",
             )
 
             if status_text != last_text:
