@@ -197,23 +197,23 @@ def generate_random_phone():
 # ==================== واجهات الأزرار (Keyboards) ====================
 def get_main_keyboard(user_id: int) -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🚀 بدء الفحص التلقائي (LightKVD)", callback_data="start_scan"))
-    markup.add(InlineKeyboardButton("📊 حالة اشتراكي", callback_data="my_sub"))
+    markup.add(InlineKeyboardButton("بدء الفحص", callback_data="start_scan"))
+    markup.add(InlineKeyboardButton("تفاصيل الاشتراك", callback_data="my_sub"))
     if user_id == ADMIN_ID:
-        markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور", callback_data="admin_panel"))
+        markup.add(InlineKeyboardButton("اعدادات البوت", callback_data="admin_panel"))
     return markup
 
 def get_scanning_keyboard() -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("⏹️ إيقاف الفحص", callback_data="stop_scan"))
+    markup.add(InlineKeyboardButton("ايقاف الفحص", callback_data="stop_scan"))
     return markup
 
 def get_admin_keyboard() -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("➕ تفعيل مستخدم", callback_data="admin_add"))
-    markup.add(InlineKeyboardButton("❌ حذف مستخدم", callback_data="admin_del"))
-    markup.add(InlineKeyboardButton("📋 قائمة المشتركين", callback_data="admin_list"))
-    markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
+    markup.add(InlineKeyboardButton("تفعيل مشترك", callback_data="admin_add"))
+    markup.add(InlineKeyboardButton("حذف مشترك", callback_data="admin_del"))
+    markup.add(InlineKeyboardButton("المشتركين الكلي", callback_data="admin_list"))
+    markup.add(InlineKeyboardButton("رجوع", callback_data="main_menu"))
     return markup
 
 # ==================== معالجة أوامر التلغرام ====================
@@ -221,12 +221,11 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
 def cmd_start(message):
     user_id = message.from_user.id
     if not is_user_active(user_id):
-        bot.reply_to(message, "❌ عذراً، لا تمتلك اشتراكاً فعالاً لاستخدام هذا البوت. تواصل مع المطور للتفعيل.")
+        bot.reply_to(message, "انت غير مشترك راسل المطور @aboodriad")
         return
     
     welcome_text = (
-        "<b>مرحباً بك في بوت فحص حسابات يالا (LightKVD Engine) 🌟</b>\n\n"
-        "اختر من الأزرار أدناه للبدء:"
+        "<b>مرحبا بك عزيزي\nلوحة المشترك الخاصة\nاختصاص فحص حسابات يلا شات داخلي\n\nقم بتشغيل البوت من خلال بدء الفحص</b>"
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=get_main_keyboard(user_id))
 
@@ -238,7 +237,7 @@ def handle_callbacks(call):
 
     if not is_user_active(user_id) and call.data != "my_sub":
         try:
-            bot.answer_callback_query(call.id, "❌ انتهى اشتراكك أو أنك غير مسجل.", show_alert=True)
+            bot.answer_callback_query(call.id, "الاشتراك منتهي (:", show_alert=True)
         except Exception:
             pass
         return
@@ -247,7 +246,7 @@ def handle_callbacks(call):
         if user_id in user_active_scans:
             user_active_scans[user_id]["running"] = False
         try:
-            bot.edit_message_text("<b>القائمة الرئيسية:</b>", chat_id, message_id, reply_markup=get_main_keyboard(user_id))
+            bot.edit_message_text("<b>مرحبا بك عزيزي\nلوحة المشترك الخاصة\nاختصاص فحص حسابات يلا شات داخلي\n\nقم بتشغيل البوت من خلال بدء الفحص</b>", chat_id, message_id, reply_markup=get_main_keyboard(user_id))
         except Exception:
             pass
 
@@ -255,16 +254,16 @@ def handle_callbacks(call):
         subs = load_subscriptions()
         str_uid = str(user_id)
         if user_id == ADMIN_ID:
-            sub_status = "مدير البوت (صلاحيات كاملة 👑)"
+            sub_status = "انت مدير البوت"
         elif str_uid in subs and time.time() < subs[str_uid]:
             rem_days = int((subs[str_uid] - time.time()) / 86400)
-            sub_status = f"فعال ✅ (متبقي {rem_days} يوم)"
+            sub_status = f"الاشتراك الخاص بك : {rem_days}"
         else:
             sub_status = "غير فعال ❌"
         
-        text = f"👤 <b>معلومات حسابك:</b>\n🆔 الآيدي: <code>{user_id}</code>\n📌 الحالة: {sub_status}"
+        text = f"<b>معلومات حسابك :</b>\nالآيدي : <code>{user_id}</code>\n📌 الحالة : {sub_status}"
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
+        markup.add(InlineKeyboardButton("رجوع", callback_data="main_menu"))
         try:
             bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
         except Exception:
@@ -273,7 +272,7 @@ def handle_callbacks(call):
     elif call.data == "start_scan":
         if user_id in user_active_scans and user_active_scans[user_id].get("running"):
             try:
-                bot.answer_callback_query(call.id, "⚠️ عملية الفحص تعمل لديك بالفعل!", show_alert=True)
+                bot.answer_callback_query(call.id, "عملية الفحص تعمل لديك بالفعل!", show_alert=True)
             except Exception:
                 pass
             return
@@ -285,10 +284,10 @@ def handle_callbacks(call):
 
         scan_msg = bot.send_message(
             chat_id,
-            "🚀 <b>جاري بدء الفحص السريع (LightKVD)...</b>\n\n"
-            "✅ صيد صحيح (VALID): 0\n"
-            "🚫 غير مسجل: 0\n"
-            "⚠️ أخطاء/أخرى: 0",
+            "<b>جاري فحص الحسابات</b>\n\n"
+            "تم صيد : 0\n"
+            "غير مسجل : 0\n"
+            "الاخطاء : 0",
             reply_markup=get_scanning_keyboard()
         )
 
@@ -308,9 +307,9 @@ def handle_callbacks(call):
         if user_id in user_active_scans:
             user_active_scans[user_id]["running"] = False
         try:
-            bot.answer_callback_query(call.id, "⏹️ تم إيقاف الفحص.")
+            bot.answer_callback_query(call.id, "تم إيقاف الفحص")
             bot.edit_message_text(
-                "⏹️ <b>تم إيقاف عملية الفحص الخاصة بك بنجاح.</b>",
+                "<b>تم إيقاف عملية الفحص الخاصة بك بنجاح</b>",
                 chat_id, message_id,
                 reply_markup=get_main_keyboard(user_id)
             )
@@ -393,12 +392,10 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
                     
                     # إرسال تنبيه الصيد للمستخدم مباشرة
                     alert_text = (
-                        f"🚨 <b>New Yalla Hit Found!</b> 🚨\n\n"
-                        f"📱 <b>Phone :</b> `+{region}{phone}`\n"
-                        f"🔑 <b>Password :</b> `{pw}`\n"
-                        f"🌍 Region : {region}\n"
-                        f"ℹ️ Status : {res.get('message', 'VALID')}\n"
-                        f"🤖 By : Bot System"
+                        f"<b>تم صيد حساب يلا شات</b>\n\n"
+                        f"<b>Phone :</b> {phone}\n"
+                        f"<b>Password :</b> {pw}\n"
+                        f"By : @aboodriad"
                     )
                     try:
                         bot.send_message(chat_id, alert_text)
@@ -422,10 +419,10 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
             e = state["error"]
 
             status_text = (
-                f"🚀 <b>جاري فحص الحسابات (LightKVD) بشكل سريع ومستقل...</b>\n\n"
-                f"✅ صيد صحيح (VALID): {v}\n"
-                f"🚫 غير مسجل: {nr}\n"
-                f"⚠️ أخطاء/أخرى: {e}"
+                "<b>جاري فحص الحسابات</b>\n\n"
+                "تم صيد : 0\n"
+                "غير مسجل : 0\n"
+                "الاخطاء : 0",
             )
 
             if status_text != last_text:
