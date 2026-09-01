@@ -419,10 +419,10 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
             e = state["error"]
 
             status_text = (
-                "<b>جاري فحص الحسابات</b>\n\n"
-                "تم صيد : {v}\n"
-                "غير مسجل : {nr}\n"
-                "الاخطاء : {e}",
+                f"<b>جاري فحص الحسابات</b>\n\n"
+                f"تم صيد : {v}\n"
+                f"غير مسجل : {nr}\n"
+                f"الاخطاء : {e}",
             )
 
             if status_text != last_text:
