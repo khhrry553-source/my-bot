@@ -87,16 +87,16 @@ HCONF = [
 
 DEVS = [
     ("OnePlus 9 Pro",       "LE2123",    "SA", "SA", 2),
-    ("Samsung Galaxy S21",  "SM-G991B",  "AE", "AE", 2),
+    ("Samsung Galaxy S21",  "SM-G991B",  "SA", "SA", 2),
     ("Xiaomi Mi 11",        "M2011K2G",  "SA", "SA", 2),
-    ("Realme GT",           "RMX2202",   "EG", "EG", 2),
+    ("Realme GT",           "RMX2202",   "SA", "SA", 2),
     ("Oppo Reno 6",         "CPH2235",   "SA", "SA", 2),
     ("Samsung Galaxy A52",  "SM-A525F",  "SA", "SA", 2),
-    ("Huawei P40 Pro",      "ELS-NX9",   "AE", "AE", 2),
+    ("Huawei P40 Pro",      "ELS-NX9",   "SA", "SA", 2),
     ("OnePlus Nord 2",      "DN2101",    "SA", "SA", 2),
-    ("Xiaomi Redmi Note 10","M2101K7AG", "EG", "EG", 2),
-    ("Vivo X60 Pro",        "V2046",     "AE", "AE", 2),
-    ("Samsung Galaxy A305F","SM-A305F",  "AE", "AE", 2),
+    ("Xiaomi Redmi Note 10","M2101K7AG", "SA", "SA", 2),
+    ("Vivo X60 Pro",        "V2046",     "SA", "SA", 2),
+    ("Samsung Galaxy A305F","SM-A305F",  "SA", "SA", 2),
     ("ZTE A7030",           "ZTE A7030", "SA", "SA", 2),
 ]
 
@@ -389,7 +389,7 @@ def _tg_text(data: Dict, mobile: str, password: str, profile: Optional[Dict] = N
     lines.append("By - @aboodriad")
     return "\n".join(lines)
 
-# === دوال توليد أرقام الدول المتاحة ===
+# === دوال توليد أرقام الدول المتاحة (السعودية والعراق فقط) ===
 def generate_saudi_number() -> str:
     prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
@@ -398,47 +398,23 @@ def generate_iraqi_number() -> str:
     prefixes = ["770", "771", "772", "773", "774", "780", "781", "782", "783", "784", "785", "786", "787", "788", "789", "790", "750", "751"]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
 
-def generate_uae_number() -> str:
-    prefixes = ["50", "52", "54", "55", "56", "58"]
-    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
-
-def generate_india_number() -> str:
-    prefixes = ["98", "99", "97", "96", "95", "94", "93", "92", "91", "90", "88", "87", "86", "81", "70", "73", "74", "75", "76", "77", "78", "79", "63"]
-    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(8))
-
-def generate_libya_number() -> str:
-    prefixes = ["91", "92", "94", "93", "95"]
-    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
-
 def generate_number(country: str) -> str:
     if country == "IQ":
         return generate_iraqi_number()
-    elif country == "AE":
-        return generate_uae_number()
-    elif country == "IN":
-        return generate_india_number()
-    elif country == "LY":
-        return generate_libya_number()
     else:
         return generate_saudi_number()
 
 def get_country_area_code(country: str) -> int:
     codes = {
         "SA": 966,
-        "IQ": 964,
-        "AE": 971,
-        "IN": 91,
-        "LY": 218
+        "IQ": 964
     }
     return codes.get(country, 966)
 
 def get_country_name_label(country: str) -> str:
     labels = {
         "SA": "السعودية 🇸🇦",
-        "IQ": "العراق 🇮🇶",
-        "AE": "الإمارات 🇦🇪",
-        "IN": "الهند 🇮🇳",
-        "LY": "ليبيا 🇱🇾"
+        "IQ": "العراق 🇮🇶"
     }
     return labels.get(country, "السعودية 🇸🇦")
 
@@ -465,9 +441,6 @@ def get_country_keyboard():
     markup.add(
         types.InlineKeyboardButton("🇸🇦 السعودية (Saudi Arabia)", callback_data="select_country_sa"),
         types.InlineKeyboardButton("🇮🇶 العراق (Iraq)", callback_data="select_country_iq"),
-        types.InlineKeyboardButton("🇦🇪 الإمارات (UAE)", callback_data="select_country_ae"),
-        types.InlineKeyboardButton("🇮🇳 الهند (India)", callback_data="select_country_in"),
-        types.InlineKeyboardButton("🇱🇾 ليبيا (Libya)", callback_data="select_country_ly"),
         types.InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_admin")
     )
     return markup
@@ -513,10 +486,7 @@ def callback_handler(call):
     elif call.data.startswith("select_country_"):
         code_map = {
             "select_country_sa": "SA",
-            "select_country_iq": "IQ",
-            "select_country_ae": "AE",
-            "select_country_in": "IN",
-            "select_country_ly": "LY"
+            "select_country_iq": "IQ"
         }
         current_country = code_map.get(call.data, "SA")
         country_name = get_country_name_label(current_country)
