@@ -426,7 +426,6 @@ def check_subscription(user_id: int) -> bool:
         if time.time() < subscribers[user_id]:
             return True
         else:
-            # انتهى الاشتراك، يتم حذفه تلقائياً
             del subscribers[user_id]
     return False
 
@@ -448,12 +447,20 @@ def get_control_keyboard(running: bool):
     )
     return markup
 
-def get_country_keyboard():
+def get_user_keyboard(running: bool):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if not running:
+        markup.add(types.InlineKeyboardButton("▶ بدء الفحص", callback_data="start_check"))
+    else:
+        markup.add(types.InlineKeyboardButton("⏹ إيقاف الفحص", callback_data="stop_check"))
+    return markup
+
+def get_country_keyboard(is_admin: bool):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("🇸🇦 السعودية (Saudi Arabia)", callback_data="select_country_sa"),
         types.InlineKeyboardButton("🇮🇶 العراق (Iraq)", callback_data="select_country_iq"),
-        types.InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_admin")
+        types.InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_admin" if is_admin else "back_to_user")
     )
     return markup
 
@@ -467,9 +474,18 @@ def start_command(message):
     if check_subscription(user_id):
         expiry = subscribers.get(user_id, 0)
         rem_days = int((expiry - time.time()) / 86400) if expiry > time.time() else 0
-        bot.reply_to(message, f"👋 أهلاً بك عزيزي المستخدم في بوت فحص يالا لودو.\n\n✅ اشتراكك **نشط**.\n⏳ الفترة المتبقية: حوالي {rem_days} يوم.", parse_mode="HTML")
+        country_label = get_country_name_label(current_country)
+        text = (
+            f"👋 <b>أهلاً بك عزيزي المشترك في لوحة فحص يالا لودو.</b>\n\n"
+            f"✅ اشتراكك <b>نشط</b>\n"
+            f"⏳ الفترة المتبقية: حوالي {rem_days} يوم\n"
+            f"🌐 دولة الفحص الحالية: <b>{country_label}</b>\n"
+            f"حالة الفحص: <b>{'يعمل 🚀' if is_running else 'متوقف 🛑'}</b>\n\n"
+            "تحكم بالفحص عبر الأزرار أدناه:"
+        )
+        bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=get_user_keyboard(is_running))
     else:
-        bot.reply_to(message, "❌ **عذراً، لست مسجلاً أو انتهى اشتراكك.**\n\nيرجى التواصل مع المطور لتفعيل حسابك.", parse_mode="HTML")
+        bot.reply_to(message, "❌ <b>عذراً، لست مسجلاً أو انتهى اشتراكك.</b>\n\nيرجى التواصل مع المطور لتفعيل حسابك.", parse_mode="HTML")
 
 @bot.message_handler(commands=['admin'])
 def admin_command(message):
@@ -479,7 +495,7 @@ def admin_command(message):
     
     country_label = get_country_name_label(current_country)
     text = (
-        "🎛 <b>قسم التفعيلات (لوحة التحكم)</b>\n\n"
+        "🎛 <b>قسم التفعيلات (لوحة التحكم بالمطور)</b>\n\n"
         f"حالة الفحص حالياً: <b>{'يعمل 🚀' if is_running else 'متوقف 🛑'}</b>\n"
         f"دولة الفحص الحالية: <b>{country_label}</b>\n"
         f"سرعة الفحص الحالية: <b>{scan_threads} ثريد</b>\n\n"
@@ -491,8 +507,12 @@ def admin_command(message):
 def callback_handler(call):
     global is_running, check_thread, valid_count, wrong_count, error_count, current_country
 
-    if call.from_user.id != ADMIN_ID:
-        bot.answer_callback_query(call.id, "❌ ليس لديك صلاحية للتحكم!", show_alert=True)
+    user_id = call.from_user.id
+    is_admin = (user_id == ADMIN_ID)
+
+    # التحقق من صلاحية الوصول (أدمن أو مشترك نشط)
+    if not is_admin and not check_subscription(user_id):
+        bot.answer_callback_query(call.id, "❌ عذراً، انتهى اشتراكك أو ليس لديك صلاحية!", show_alert=True)
         return
 
     if call.data == "start_check":
@@ -506,7 +526,7 @@ def callback_handler(call):
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="HTML",
-            reply_markup=get_country_keyboard()
+            reply_markup=get_country_keyboard(is_admin)
         )
 
     elif call.data.startswith("select_country_"):
@@ -532,6 +552,8 @@ def callback_handler(call):
         check_thread.start()
 
         bot.answer_callback_query(call.id, f"✅ تم بدء الفحص لدولة {country_name}")
+        
+        active_markup = get_control_keyboard(True) if is_admin else get_user_keyboard(True)
         bot.edit_message_text(
             f"🚀 <b>جاري فحص حسابات دولة {country_name} الآن...</b>\n\n"
             f"✅ صيد (Valid): {valid_count}\n"
@@ -540,10 +562,12 @@ def callback_handler(call):
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="HTML",
-            reply_markup=get_control_keyboard(True)
+            reply_markup=active_markup
         )
 
     elif call.data == "back_to_admin":
+        if not is_admin:
+            return
         country_label = get_country_name_label(current_country)
         text = (
             "🎛 <b>قسم التفعيلات (لوحة التحكم)</b>\n\n"
@@ -560,6 +584,26 @@ def callback_handler(call):
             reply_markup=get_control_keyboard(is_running)
         )
 
+    elif call.data == "back_to_user":
+        expiry = subscribers.get(user_id, 0)
+        rem_days = int((expiry - time.time()) / 86400) if expiry > time.time() else 0
+        country_label = get_country_name_label(current_country)
+        text = (
+            f"👋 <b>أهلاً بك عزيزي المشترك في لوحة فحص يالا لودو.</b>\n\n"
+            f"✅ اشتراكك <b>نشط</b>\n"
+            f"⏳ الفترة المتبقية: حوالي {rem_days} يوم\n"
+            f"🌐 دولة الفحص الحالية: <b>{country_label}</b>\n"
+            f"حالة الفحص: <b>{'يعمل 🚀' if is_running else 'متوقف 🛑'}</b>\n\n"
+            "تحكم بالفحص عبر الأزرار أدناه:"
+        )
+        bot.edit_message_text(
+            text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="HTML",
+            reply_markup=get_user_keyboard(is_running)
+        )
+
     elif call.data == "stop_check":
         if not is_running:
             bot.answer_callback_query(call.id, "⚠️ الفحص متوقف مسبقاً!")
@@ -572,8 +616,7 @@ def callback_handler(call):
         
         country_label = get_country_name_label(current_country)
         main_text = (
-            "🎛 <b>قسم التفعيلات (لوحة التحكم)</b>\n\n"
-            "حالة الفحص حالياً: <b>متوقف 🛑</b>\n"
+            f"🌐 <b>لوحة الفحص (متوقف 🛑)</b>\n"
             f"دولة الفحص الأخيرة: <b>{country_label}</b>\n\n"
             f"📊 <b>ملخص النتائج النهائية:</b>\n"
             f"✅ صيد (Valid): {valid_count}\n"
@@ -581,49 +624,56 @@ def callback_handler(call):
             f"⚠️ أخطاء اتصال (Errors): {error_count}\n\n"
             "اختر أحد الخيارات أدناه:"
         )
+        active_markup = get_control_keyboard(False) if is_admin else get_user_keyboard(False)
         bot.edit_message_text(
             main_text,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="HTML",
-            reply_markup=get_control_keyboard(False)
+            reply_markup=active_markup
         )
 
-    elif call.data == "add_subscriber":
-        user_states[call.from_user.id] = "add_subscriber"
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "أرسل ايدي الشخص وعدد الأيام بالتنسيق التالي:\nمثال: <code>123456789 30</code>", parse_mode="HTML")
+    # الوظائف الخاصة بالمطور فقط
+    elif call.data in ["add_subscriber", "del_subscriber", "list_subscribers", "broadcast_msg", "set_threads"]:
+        if not is_admin:
+            bot.answer_callback_query(call.id, "❌ هذا الزر مخصص للمطور فقط!", show_alert=True)
+            return
 
-    elif call.data == "del_subscriber":
-        user_states[call.from_user.id] = "del_subscriber"
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "أرسل ايدي الشخص المراد حذفه من المشتركين:")
+        if call.data == "add_subscriber":
+            user_states[user_id] = "add_subscriber"
+            bot.answer_callback_query(call.id)
+            bot.send_message(call.message.chat.id, "أرسل ايدي الشخص وعدد الأيام بالتنسيق التالي:\nمثال: <code>123456789 30</code>", parse_mode="HTML")
 
-    elif call.data == "list_subscribers":
-        bot.answer_callback_query(call.id)
-        if not subscribers:
-            bot.send_message(call.message.chat.id, "📋 لا يوجد مشتركين مسجلين حالياً.")
-        else:
-            now = time.time()
-            subs_text = "📋 <b>قائمة المشتركين:</b>\n\n"
-            for sub_id, expiry in list(subscribers.items()):
-                if now > expiry:
-                    status = "منتهي ❌"
-                else:
-                    rem_days = int((expiry - now) / 86400)
-                    status = f"نشط ✅ (يتبقى {rem_days} يوم)"
-                subs_text += f"• <code>{sub_id}</code> — {status}\n"
-            bot.send_message(call.message.chat.id, subs_text, parse_mode="HTML")
+        elif call.data == "del_subscriber":
+            user_states[user_id] = "del_subscriber"
+            bot.answer_callback_query(call.id)
+            bot.send_message(call.message.chat.id, "أرسل ايدي الشخص المراد حذفه من المشتركين:")
 
-    elif call.data == "broadcast_msg":
-        user_states[call.from_user.id] = "broadcast"
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "📢 أرسل رسالة الإذاعة المراد إرسالها لجميع المشتركين:")
+        elif call.data == "list_subscribers":
+            bot.answer_callback_query(call.id)
+            if not subscribers:
+                bot.send_message(call.message.chat.id, "📋 لا يوجد مشتركين مسجلين حالياً.")
+            else:
+                now = time.time()
+                subs_text = "📋 <b>قائمة المشتركين:</b>\n\n"
+                for sub_id, expiry in list(subscribers.items()):
+                    if now > expiry:
+                        status = "منتهي ❌"
+                    else:
+                        rem_days = int((expiry - now) / 86400)
+                        status = f"نشط ✅ (يتبقى {rem_days} يوم)"
+                    subs_text += f"• <code>{sub_id}</code> — {status}\n"
+                bot.send_message(call.message.chat.id, subs_text, parse_mode="HTML")
 
-    elif call.data == "set_threads":
-        user_states[call.from_user.id] = "set_threads"
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, f"⚙️ السرعة الحالية: <code>{scan_threads}</code> ثريد.\n\nأرسل عدد الثريدز الجديد (رقم صحيح بين 1 و 100):", parse_mode="HTML")
+        elif call.data == "broadcast_msg":
+            user_states[user_id] = "broadcast"
+            bot.answer_callback_query(call.id)
+            bot.send_message(call.message.chat.id, "📢 أرسل رسالة الإذاعة المراد إرسالها لجميع المشتركين:")
+
+        elif call.data == "set_threads":
+            user_states[user_id] = "set_threads"
+            bot.answer_callback_query(call.id)
+            bot.send_message(call.message.chat.id, f"⚙️ السرعة الحالية: <code>{scan_threads}</code> ثريد.\n\nأرسل عدد الثريدز الجديد (رقم صحيح بين 1 و 100):", parse_mode="HTML")
 
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.from_user.id in user_states)
 def handle_admin_input(message):
@@ -635,15 +685,18 @@ def handle_admin_input(message):
         parts = text.split()
         if parts and parts[0].isdigit():
             sub_id = int(parts[0])
-            days = 30  # الافتراضي 30 يوم في حال لم يتم كتابة عدد الأيام
+            days = 30
             if len(parts) > 1 and parts[1].isdigit():
                 days = int(parts[1])
             
-            # حساب تاريخ الانتهاء بالثواني
             expiry_time = time.time() + (days * 24 * 3600)
             subscribers[sub_id] = expiry_time
             
             bot.reply_to(message, f"✅ تم تفعيل المشترك بنجاح:\n🆔 الآيدي: <code>{sub_id}</code>\n⏳ المدة: {days} يوم", parse_mode="HTML")
+            try:
+                bot.send_message(sub_id, f"🎉 <b>مبروك! تم تفعيل اشتراكك في بوت الفحص لمدة {days} يوم.</b>\nأرسل /start لفتح لوحة التحكم وبدء الفحص.", parse_mode="HTML")
+            except Exception:
+                pass
         else:
             bot.reply_to(message, "❌ الآيدي المدخل غير صحيح. مثال:\n<code>123456789 30</code>", parse_mode="HTML")
 
@@ -766,16 +819,18 @@ def run_checker_loop(chat_id, msg_id):
                 break
                 
             try:
+                # التحقق لتحديث اللوحة بحسب مرسل الرسالة (مشترك أو مطور)
+                active_markup = get_control_keyboard(True) if chat_id == ADMIN_ID else get_user_keyboard(True)
                 bot.edit_message_text(
                     status_text,
                     chat_id=chat_id,
                     message_id=msg_id,
                     parse_mode="HTML",
-                    reply_markup=get_control_keyboard(True)
+                    reply_markup=active_markup
                 )
             except Exception:
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running and waiting for developer commands...")
+    print("🤖 Bot is running and waiting for commands...")
     bot.infinity_polling()
