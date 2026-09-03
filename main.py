@@ -40,8 +40,8 @@ error_count = 0
 scan_threads = 10  # عدد الثريدز الافتراضي لسرعة الفحص
 current_country = "SA"  # الدولة الافتراضية للفحص
 
-# تخزين بيانات المشتركين وحالات الأدمن
-subscribers: Set[int] = set()
+# تخزين بيانات المشتركين: {user_id: expiry_timestamp}
+subscribers: Dict[int, float] = {}
 user_states: Dict[int, str] = {}
 
 VER    = "YallaLudo-1.4.9.2-(Build 1040922)-Android 30"
@@ -418,6 +418,18 @@ def get_country_name_label(country: str) -> str:
     }
     return labels.get(country, "السعودية 🇸🇦")
 
+# === نظام التحقق من اشتراك المستخدم ===
+def check_subscription(user_id: int) -> bool:
+    if user_id == ADMIN_ID:
+        return True
+    if user_id in subscribers:
+        if time.time() < subscribers[user_id]:
+            return True
+        else:
+            # انتهى الاشتراك، يتم حذفه تلقائياً
+            del subscribers[user_id]
+    return False
+
 # === لوحات المفاتيح والأزرار ===
 
 def get_control_keyboard(running: bool):
@@ -444,6 +456,20 @@ def get_country_keyboard():
         types.InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_admin")
     )
     return markup
+
+@bot.message_handler(commands=['start'])
+def start_command(message):
+    user_id = message.from_user.id
+    if user_id == ADMIN_ID:
+        bot.reply_to(message, "أهلاً بك يا مطور البوت 👨‍💻\nاستخدم الأمر /admin لوحة التحكم.")
+        return
+    
+    if check_subscription(user_id):
+        expiry = subscribers.get(user_id, 0)
+        rem_days = int((expiry - time.time()) / 86400) if expiry > time.time() else 0
+        bot.reply_to(message, f"👋 أهلاً بك عزيزي المستخدم في بوت فحص يالا لودو.\n\n✅ اشتراكك **نشط**.\n⏳ الفترة المتبقية: حوالي {rem_days} يوم.", parse_mode="HTML")
+    else:
+        bot.reply_to(message, "❌ **عذراً، لست مسجلاً أو انتهى اشتراكك.**\n\nيرجى التواصل مع المطور لتفعيل حسابك.", parse_mode="HTML")
 
 @bot.message_handler(commands=['admin'])
 def admin_command(message):
@@ -566,25 +592,33 @@ def callback_handler(call):
     elif call.data == "add_subscriber":
         user_states[call.from_user.id] = "add_subscriber"
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "ارسل ايدي الشخص المراد تفعيلة و عدد الايام او تفعيل بساعات")
+        bot.send_message(call.message.chat.id, "أرسل ايدي الشخص وعدد الأيام بالتنسيق التالي:\nمثال: <code>123456789 30</code>", parse_mode="HTML")
 
     elif call.data == "del_subscriber":
         user_states[call.from_user.id] = "del_subscriber"
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "ارسل ايدي الشخص المراد حذفه من المشتركين:")
+        bot.send_message(call.message.chat.id, "أرسل ايدي الشخص المراد حذفه من المشتركين:")
 
     elif call.data == "list_subscribers":
         bot.answer_callback_query(call.id)
         if not subscribers:
             bot.send_message(call.message.chat.id, "📋 لا يوجد مشتركين مسجلين حالياً.")
         else:
-            subs_text = "📋 <b>قائمة المشتركين:</b>\n\n" + "\n".join([f"• <code>{sub}</code>" for sub in subscribers])
+            now = time.time()
+            subs_text = "📋 <b>قائمة المشتركين:</b>\n\n"
+            for sub_id, expiry in list(subscribers.items()):
+                if now > expiry:
+                    status = "منتهي ❌"
+                else:
+                    rem_days = int((expiry - now) / 86400)
+                    status = f"نشط ✅ (يتبقى {rem_days} يوم)"
+                subs_text += f"• <code>{sub_id}</code> — {status}\n"
             bot.send_message(call.message.chat.id, subs_text, parse_mode="HTML")
 
     elif call.data == "broadcast_msg":
         user_states[call.from_user.id] = "broadcast"
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "📢 ارسل رسالة الإذاعة المراد إرسالها لجميع المشتركين:")
+        bot.send_message(call.message.chat.id, "📢 أرسل رسالة الإذاعة المراد إرسالها لجميع المشتركين:")
 
     elif call.data == "set_threads":
         user_states[call.from_user.id] = "set_threads"
@@ -601,17 +635,24 @@ def handle_admin_input(message):
         parts = text.split()
         if parts and parts[0].isdigit():
             sub_id = int(parts[0])
-            subscribers.add(sub_id)
-            bot.reply_to(message, f"✅ تم تفعيل المشترك بنجاح في قسم التفعيلات:\n<code>{text}</code>", parse_mode="HTML")
+            days = 30  # الافتراضي 30 يوم في حال لم يتم كتابة عدد الأيام
+            if len(parts) > 1 and parts[1].isdigit():
+                days = int(parts[1])
+            
+            # حساب تاريخ الانتهاء بالثواني
+            expiry_time = time.time() + (days * 24 * 3600)
+            subscribers[sub_id] = expiry_time
+            
+            bot.reply_to(message, f"✅ تم تفعيل المشترك بنجاح:\n🆔 الآيدي: <code>{sub_id}</code>\n⏳ المدة: {days} يوم", parse_mode="HTML")
         else:
-            bot.reply_to(message, "❌ الآيدي المدخل غير صحيح. يرجى إرسال الآيدي والتفاصيل بشكل صحيح.")
+            bot.reply_to(message, "❌ الآيدي المدخل غير صحيح. مثال:\n<code>123456789 30</code>", parse_mode="HTML")
 
     elif action == "del_subscriber":
         text = message.text.strip()
         if text.isdigit():
             sub_id = int(text)
             if sub_id in subscribers:
-                subscribers.remove(sub_id)
+                del subscribers[sub_id]
                 bot.reply_to(message, f"🗑 تم حذف المشترك <code>{sub_id}</code> بنجاح.", parse_mode="HTML")
             else:
                 bot.reply_to(message, "⚠️ هذا الآيدي غير موجود في قائمة المشتركين.")
