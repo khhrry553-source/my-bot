@@ -298,7 +298,7 @@ def format_hit_message(data, mobile, password, country, prof):
             f"<b>حالة الحساب :</b> {frz}",
         ])
     else:
-        lines.append("⚠️ <i>تعذر جلب تفاصيل الملف الشخصي إضافياً</i>")
+        lines.append("⚠️ <i>الحساب طالب تحقق</i>")
 
     lines.append("\nBy - @aboodriad")
     return "\n".join(lines)
