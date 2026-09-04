@@ -32,7 +32,7 @@ def get_proxy():
     }
 
 # === إعدادات البوت والمطور ===
-TG_TOKEN = "8208523854:AAGrLZ6DDnY51an-FUpTsAhBoT-BTP7mjUk"
+TG_TOKEN = "8208523854:AAEeI4w9VPmdKoPundR5wD3uMqmwrxj2bng"
 ADMIN_ID = 8795120325  # آيدي المطور
 
 bot = telebot.TeleBot(TG_TOKEN)
