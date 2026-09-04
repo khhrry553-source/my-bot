@@ -50,7 +50,7 @@ ivrev = (0x10325476, 0x98badcfe, 0xefcdab89, 0x67452301)
 
 # تخزين جلسات المشتركين بشكل مستقل تماماً
 user_sessions: Dict[int, Dict[str, Any]] = {}
-scan_threads = 10  # سرعة الفحص الافتراضية
+scan_threads = 5  # سرعة الفحص الافتراضية
 
 # تخزين المشتركين: {user_id: expiry_timestamp}
 subscribers: Dict[int, float] = {}
