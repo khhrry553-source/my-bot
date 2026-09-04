@@ -24,7 +24,7 @@ import telebot
 from telebot import types
 
 # === إعدادات البوت والمطور ===
-TG_TOKEN = "8844579780:AAF8oAN9eRfUK72kZL6e2BQJYYDj_06ZzAg"
+TG_TOKEN = "8208523854:AAEeI4w9VPmdKoPundR5wD3uMqmwrxj2bng"
 ADMIN_ID = 8795120325  # آيدي المطور
 
 bot = telebot.TeleBot(TG_TOKEN)
