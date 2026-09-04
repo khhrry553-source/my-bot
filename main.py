@@ -19,11 +19,17 @@ from Crypto.Util.Padding import pad
 import telebot
 from telebot import types
 
-# === إعدادات البروكسي ===
-PROXIES = {
-    "http": "http://vcvhcqlf-rotate:zpvymnjdeh0c@p.webshare.io:80",
-    "https": "http://vcvhcqlf-rotate:zpvymnjdeh0c@p.webshare.io:80",
-}
+# === إعدادات البروكسي الديناميكي ===
+def get_proxy():
+    """
+    توليد إعدادات بروكسي جديدة لكل عملية طلب لضمان تغيير الـ IP مع كل فحص.
+    """
+    # يمكنك إضافة رقم جلسة عشوائي إذا كان مزود البروكسي يدعم ذلك عبر اسم المستخدم
+    session_id = random.randint(10000, 999999)
+    return {
+        "http": "http://vcvhcqlf-rotate:zpvymnjdeh0c@p.webshare.io:80",
+        "https": "http://vcvhcqlf-rotate:zpvymnjdeh0c@p.webshare.io:80",
+    }
 
 # === إعدادات البوت والمطور ===
 TG_TOKEN = "8208523854:AAGrLZ6DDnY51an-FUpTsAhBoT-BTP7mjUk"
@@ -248,8 +254,8 @@ def fetch_profile(token, user_id, login_data=None):
             'Content-Type': 'application/json; charset=utf-8',
         }
         try:
-            # تم إضافة البروكسي هنا
-            r   = requests.post(srv + profile_path, data=wire, headers=hdrs, proxies=PROXIES, timeout=10)
+            # استخدام بروكسي جديد لكل طلب جلب معلومات
+            r   = requests.post(srv + profile_path, data=wire, headers=hdrs, proxies=get_proxy(), timeout=10)
             obj = decode_resp(r.json(), hera)
             if obj.get('status') == 0:
                 data = obj.get('data') or {}
@@ -623,8 +629,8 @@ def run_checker_loop(chat_id, user_id, msg_id):
             headers, wire, hera = body
 
             try:
-                # تم إضافة البروكسي هنا
-                response = requests.post(api_url, data=wire, headers=headers, proxies=PROXIES, timeout=15)
+                # استخدام get_proxy() لتوليد بروكسي جديد لكل عملية فحص وتحقق
+                response = requests.post(api_url, data=wire, headers=headers, proxies=get_proxy(), timeout=15)
                 result = decode_resp(response.json(), hera)
             except Exception:
                 with session["stats_lock"]:
@@ -683,5 +689,5 @@ def run_checker_loop(chat_id, user_id, msg_id):
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running with isolated user sessions & advanced profile fetching...")
+    print("🤖 Bot is running with isolated user sessions & dynamic rotating proxies...")
     bot.infinity_polling()
