@@ -22,13 +22,19 @@ from telebot import types
 # === إعدادات البروكسي الديناميكي ===
 def get_proxy():
     """
-    توليد إعدادات بروكسي جديدة لكل عملية طلب لضمان تغيير الـ IP مع كل فحص.
+    توليد معرف جلسة عشوائي مع كل استدعاء لإجبار مزود البروكسي 
+    على تغيير الـ IP بنسبة 100% مع كل طلب جديد.
     """
+    session_id = random.randint(1000000, 9999999)
+    # إضافة لاحقة الجلسة العشوائية لاسم المستخدم الأساسي
+    username = f"330d9a235026e98dbbd8_session_{session_id}"
+    password = "e2737c9436c5d6c0"
+    
+    proxy_url = f"http://{username}:{password}@gw.dataimpulse.com:823"
     return {
-        "http": "http://azhhx206+gmail.com:qwf4GknBs38h265N@142.202.220.242:29659",
-        "https": "http://azhhx206+gmail.com:qwf4GknBs38h265N@142.202.220.242:29659",
-    }
-
+        "http": proxy_url,
+        "https": proxy_url,
+        
 # === إعدادات البوت والمطور ===
 TG_TOKEN = "8844579780:AAH_-8fTwYgelZgo-Q6JOK2trcqSMdorqZ0"
 ADMIN_ID = 8795120325  # آيدي المطور
