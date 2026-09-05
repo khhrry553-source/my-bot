@@ -25,8 +25,8 @@ def get_proxy():
     توليد إعدادات بروكسي جديدة لكل عملية طلب لضمان تغيير الـ IP مع كل فحص.
     """
     return {
-        "http": "http://330d9a235026e98dbbd8:e2737c9436c5d6c0@gw.dataimpulse.com:823",
-        "https": "http://330d9a235026e98dbbd8:e2737c9436c5d6c0@gw.dataimpulse.com:823",
+        "http": "http://azhhx206+gmail.com:qwf4GknBs38h265N@142.202.220.242:29659",
+        "https": "http://azhhx206+gmail.com:qwf4GknBs38h265N@142.202.220.242:29659",
     }
 
 # === إعدادات البوت والمطور ===
