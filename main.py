@@ -34,7 +34,7 @@ def get_proxy():
     return {
         "http": proxy_url,
         "https": proxy_url,
-        
+} 
 # === إعدادات البوت والمطور ===
 TG_TOKEN = "8844579780:AAH_-8fTwYgelZgo-Q6JOK2trcqSMdorqZ0"
 ADMIN_ID = 8795120325  # آيدي المطور
