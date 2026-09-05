@@ -19,13 +19,23 @@ from Crypto.Util.Padding import pad
 import telebot
 from telebot import types
 
-# === إعدادات البروكسي الديناميكي ===
+# === إعدادات البروكسي الخاص بك مع التغيير التلقائي مع كل فحص ===
 def get_proxy():
-    proxy_url = f"http://azhhx206+gmail.com:i3G9dKxtHX1458Ua@169.197.82.58:16645"
+    """
+    توليد معرف جلسة عشوائي مع كل استدعاء لإجبار مزود البروكسي 
+    على تغيير الـ IP بنسبة 100% مع كل طلب فحص جديد.
+    """
+    session_id = random.randint(1000000, 9999999)
+    # إضافة لاحقة الجلسة العشوائية لاسم المستخدم الخاص بك لتغيير الـ IP فوراً
+    username = f"user0e9234bb_session_{session_id}"
+    password = "51e5211a276c"
+    
+    proxy_url = f"http://{username}:{password}@169.197.82.58:16645"
     return {
         "http": proxy_url,
         "https": proxy_url,
-}
+    }
+
 # === إعدادات البوت والمطور ===
 TG_TOKEN = "8844579780:AAH_-8fTwYgelZgo-Q6JOK2trcqSMdorqZ0"
 ADMIN_ID = 8795120325  # آيدي المطور
@@ -299,7 +309,6 @@ def format_hit_message(data, mobile, password, country, prof):
 
 # === مولد أرقام السعودية فقط ===
 def generate_saudi_number() -> str:
-    # أرقام الهواتف السعودية الأساسية (STC, Mobily, Zain, Lebara, Virgin)
     prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
 
@@ -532,7 +541,6 @@ def run_checker_loop(chat_id, user_id, msg_id):
     ]
 
     def worker():
-        # استخدام requests.Session لتسريع الاتصالات عبر الاستفادة من Connection Pooling
         session_req = requests.Session()
         while session["is_running"] and not session["stop_event"].is_set():
             country = "SA"  # السعودية فقط
@@ -606,5 +614,5 @@ def run_checker_loop(chat_id, user_id, msg_id):
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running for Saudi Arabia (SA) only with high-speed sessions and dynamic proxies...")
+    print("🤖 Bot is running for Saudi Arabia (SA) only with your custom rotating proxy...")
     bot.infinity_polling()
