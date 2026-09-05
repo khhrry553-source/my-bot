@@ -19,55 +19,13 @@ from Crypto.Util.Padding import pad
 import telebot
 from telebot import types
 
-# === إعدادات البروكسي المجاني والديناميكي بلا حدود ===
-_proxy_pool = []
-_proxy_lock = threading.Lock()
-_last_fetch_time = 0
-
-def fetch_free_proxies():
-    """
-    جلب قائمة بروكسيات مجانية ونشطة تلقائياً من مصادر عامة 
-    وتحديثها بشكل دوري لتجنب توقف الأداة.
-    """
-    global _proxy_pool, _last_fetch_time
-    try:
-        url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all"
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            proxies = [p.strip() for p in response.text.splitlines() if p.strip()]
-            if proxies:
-                with _proxy_lock:
-                    _proxy_pool = proxies
-                    _last_fetch_time = time.time()
-    except Exception:
-        pass
-
+# === إعدادات البروكسي الديناميكي ===
 def get_proxy():
-    """
-    اختيار وتغيير البروكسي بشكل عشوائي وديناميكي مع كل طلب 
-    لضمان تغيير الـ IP باستمرار وتجنب الحظر بلا حدود.
-    """
-    global _proxy_pool, _last_fetch_time
-    current_time = time.time()
-    
-    # تحديث القائمة تلقائياً كل 10 دقائق في الخلفية
-    with _proxy_lock:
-        if not _proxy_pool or (current_time - _last_fetch_time) > 600:
-            _last_fetch_time = current_time
-            threading.Thread(target=fetch_free_proxies, daemon=True).start()
-            
-    with _proxy_lock:
-        if _proxy_pool:
-            proxy_ip = random.choice(_proxy_pool)
-            proxy_url = f"http://{proxy_ip}"
-            return {
-                "http": proxy_url,
-                "https": proxy_url,
-            }
-            
-    # في حال عدم توفر بروكسي مؤقتاً يتم إرجاع اتصال مباشر أو محاولة جلب فوري
-    return None
-
+    proxy_url = f"http://azhhx206+gmail.com:i3G9dKxtHX1458Ua@169.197.82.58:16645"
+    return {
+        "http": proxy_url,
+        "https": proxy_url,
+}
 # === إعدادات البوت والمطور ===
 TG_TOKEN = "8844579780:AAH_-8fTwYgelZgo-Q6JOK2trcqSMdorqZ0"
 ADMIN_ID = 8795120325  # آيدي المطور
@@ -341,6 +299,7 @@ def format_hit_message(data, mobile, password, country, prof):
 
 # === مولد أرقام السعودية فقط ===
 def generate_saudi_number() -> str:
+    # أرقام الهواتف السعودية الأساسية (STC, Mobily, Zain, Lebara, Virgin)
     prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
 
@@ -573,6 +532,7 @@ def run_checker_loop(chat_id, user_id, msg_id):
     ]
 
     def worker():
+        # استخدام requests.Session لتسريع الاتصالات عبر الاستفادة من Connection Pooling
         session_req = requests.Session()
         while session["is_running"] and not session["stop_event"].is_set():
             country = "SA"  # السعودية فقط
@@ -646,5 +606,5 @@ def run_checker_loop(chat_id, user_id, msg_id):
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running for Saudi Arabia (SA) only with free dynamic proxy rotation and infinite loops...")
+    print("🤖 Bot is running for Saudi Arabia (SA) only with high-speed sessions and dynamic proxies...")
     bot.infinity_polling()
